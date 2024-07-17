@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings"
+  RUSTUP_MAX_RETRIES: 10
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
+jobs:
+  rustfmt:
+    name: Rustfmt [Formatter]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Build | Format
+        run: cargo fmt --all -- --check
+  clippy:
+    name: Clippy [Linter]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build | Lint
+        uses: giraffate/clippy-action@94e9bd8deab2618756ec5380f12eb35bcb0a88ca
+  cargo_check:
+    name: Compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build | Check
+        run: cargo check --workspace --locked
+  cargo_check_no_features:
+    name: Compile with no features enabled
+    needs: cargo_check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build | Check
+        run: cargo check --workspace --locked --no-default-features
+  cargo_check_all_features:
+    name: Compile with all features enabled
+    needs: cargo_check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build | Check
+        run: cargo check --workspace --locked --all-features
+  test:
+    name: Test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build | Test
+        run: cargo test --workspace --verbose --all-features

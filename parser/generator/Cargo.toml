@@ -1,0 +1,18 @@
+[package]
+name = "decaf-ast-generator"
+authors = ["Rintaro Itokawa <me@re-taro.dev>"]
+version = "0.0.0"
+edition = "2021"
+repository = "https://github.com/re-taro/decaf"
+
+[lib]
+path = "generator.rs"
+proc-macro = true
+
+[dependencies]
+quote = "1.0"
+proc-macro2 = "1.0"
+self-rust-tokenize = "0.3.3"
+parser = { path = "..", package = "decaf-parser", features = [
+  "self-rust-tokenize",
+] }

@@ -1,0 +1,13 @@
+[package]
+name = "decaf-parser-visitable-derive"
+authors = ["Rintaro Itokawa <me@re-taro.dev>"]
+version = "0.0.0"
+edition = "2021"
+repository = "https://github.com/re-taro/decaf"
+
+[lib]
+path = "macro.rs"
+proc-macro = true
+
+[dependencies]
+syn-helpers = "0.4.2"

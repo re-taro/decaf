@@ -1,0 +1,8 @@
+[package]
+name = "decaf-checker"
+authors = ["Rintaro Itokawa <me@re-taro.dev>"]
+version = "0.0.0"
+edition = "2021"
+repository = "https://github.com/re-taro/decaf"
+
+[dependencies]

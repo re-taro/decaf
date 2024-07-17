@@ -1,0 +1,25 @@
+[workspace]
+members = ["parser", "parser/visitable-derive", "parser/generator", "checker"]
+
+[package]
+name = "decaf"
+authors = ["Rintaro Itokawa <me@re-taro.dev>"]
+version = "0.0.0"
+edition = "2021"
+repository = "https://github.com/re-taro/decaf"
+default-run = "decaf-cli"
+
+[[bin]]
+name = "decaf-cli"
+path = "src/main.rs"
+
+[dependencies]
+parser = { path = "./parser", version = "0.0.0", package = "decaf-parser" }
+checker = { path = "./checker", version = "0.0.0", package = "decaf-checker" }
+console = "0.14.1"
+codespan-reporting = { git = "https://github.com/brendanzab/codespan" }
+argh = "0.1.6"
+base64 = "0.13.0"
+multiline-term-input = "0.1.0"
+enum-variants-strings = "0.1.0"
+notify = "4.0.17"
