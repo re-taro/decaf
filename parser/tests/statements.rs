@@ -2,7 +2,8 @@ use decaf_parser::{ASTNode, Module, ParseOutput, SourceId, ToStringSettingsAndDa
 
 #[test]
 fn statements() {
-	let file = r#"import x from "./a.js";
+	let input = r#"
+import x from "./a.js";
 if (true) {
     console.log("hi")
 }
@@ -20,14 +21,15 @@ for (let i = 0; i < 4; i++) {
     while (true) {
         break
     }
-}"#;
+}"#
+	.trim_start();
 
 	let ParseOutput(module, state) =
-		Module::from_string(file.to_owned(), Default::default(), SourceId::NULL, None, Vec::new())
+		Module::from_string(input.to_owned(), Default::default(), SourceId::NULL, None, Vec::new())
 			.unwrap();
 
-	assert_eq!(
-		module.to_string(&ToStringSettingsAndData(Default::default(), state.function_extractor)),
-		file
-	);
+	let output =
+		module.to_string(&ToStringSettingsAndData(Default::default(), state.function_extractor));
+
+	assert_eq!(output, input);
 }
