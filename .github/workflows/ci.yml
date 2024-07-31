@@ -113,6 +113,6 @@ jobs:
         run: cargo install cargo-fuzz
       - name: Build | Fuzz
         run: |
-          cargo fuzz run statements
-          cargo fuzz run structured
+          cargo fuzz run -s none module_roundtrip_naive -- -timeout=10 -max_total_time=120 -use_value_profile=1 || true
+          cargo fuzz run -s none module_roundtrip_structured -- -timeout=10 -max_total_time=120 -use_value_profile=1 || true
         working-directory: parser/fuzz

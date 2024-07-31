@@ -30,14 +30,13 @@ members = ["."]
 debug = 1
 
 [[bin]]
-name = "statements"
-path = "fuzz_targets/statements.rs"
+name = "module_roundtrip_naive"
+path = "fuzz_targets/module_roundtrip_naive.rs"
 test = false
 doc = false
-bench = false
 
 [[bin]]
-name = "structured"
-path = "fuzz_targets/structured.rs"
+name = "module_roundtrip_structured"
+path = "fuzz_targets/module_roundtrip_structured.rs"
 test = false
 doc = false

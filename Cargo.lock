@@ -3,16 +3,6 @@
 version = 3
 
 [[package]]
-name = "Inflector"
-version = "0.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
-dependencies = [
- "lazy_static",
- "regex",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -123,7 +113,7 @@ dependencies = [
  "console",
  "decaf-checker",
  "decaf-parser",
- "enum-variants-strings 0.1.0",
+ "enum-variants-strings",
  "multiline-term-input",
  "notify",
 ]
@@ -151,7 +141,7 @@ dependencies = [
  "derive-enum-from-into",
  "derive-finite-automaton",
  "derive-partial-eq-extras",
- "enum-variants-strings 0.2.3",
+ "enum-variants-strings",
  "enum_variant_type",
  "iterator-endiate",
  "match_deref",
@@ -233,33 +223,11 @@ checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
 name = "enum-variants-strings"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06f44f6b8ba7ebfb99f6d741177fe6b2e10047f5751bfc6a10b7d490f040781"
-dependencies = [
- "enum-variants-strings-derive 0.1.0",
-]
-
-[[package]]
-name = "enum-variants-strings"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "208ec1cfed58007d641f74552a523a405cd374417ec65ba01fb89ab2796054a1"
 dependencies = [
- "enum-variants-strings-derive 0.2.4",
-]
-
-[[package]]
-name = "enum-variants-strings-derive"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cbf8893d063ca72744f9883673536aa090ae354edc40cc4e98eb42b548f0f9a"
-dependencies = [
- "Inflector",
- "either_n",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
+ "enum-variants-strings-derive",
 ]
 
 [[package]]
