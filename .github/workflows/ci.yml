@@ -99,3 +99,20 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.3
       - name: Build | Test
         run: cargo test --workspace --verbose --all-features
+  fuzzing:
+    name: Fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Setup | cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Build | Fuzz
+        run: |
+          cargo fuzz run statements
+          cargo fuzz run structured
+        working-directory: parser/fuzz
