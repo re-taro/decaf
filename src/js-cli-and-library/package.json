@@ -1,0 +1,20 @@
+{
+  "name": "decaf",
+  "type": "module",
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.7.0",
+  "description": "A JavaScript compiler and TypeScript checker written in Rust with a focus on static analysis and runtime performance",
+  "license": "MIT",
+  "repository": "https://github.com/re-taro/decaf",
+  "main": "index.mjs",
+  "types": "decaf.d.ts",
+  "scripts": {
+    "clean": "rm decaf.* && rm decaf_bg.*",
+    "build": "cargo build --lib --target wasm32-unknown-unknown && npm run bind",
+    "bind": "wasm-bindgen --out-dir . --target nodejs ../../target/wasm32-unknown-unknown/debug/decaf.wasm"
+  },
+  "bin": {
+    "decaf": "./cli.cjs"
+  },
+  "author": "Rintaro Itokawa <me@re-taro.dev> (https://re-taro.dev)"
+}
