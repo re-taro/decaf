@@ -1,10 +1,10 @@
 #[allow(unused)]
 use std::{
-	collections::HashSet,
-	env, fs,
-	path::{Path, PathBuf},
-	process::Command,
-	time::Instant,
+    collections::HashSet,
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Instant,
 };
 
 use argh::FromArgs;
@@ -22,21 +22,21 @@ mod utilities;
 /// Ezno Compiler
 #[derive(FromArgs, Debug)]
 struct TopLevel {
-	#[argh(subcommand)]
-	nested: CompilerSubCommand,
+    #[argh(subcommand)]
+    nested: CompilerSubCommand,
 }
 
 #[derive(FromArgs, Debug)]
 #[argh(subcommand)]
 enum CompilerSubCommand {
-	Info(Info),
-	// Build(BuildArguments),
-	// Check(CheckArguments),
-	// Run(RunArguments),
-	// Repl(repl::ReplArguments),
-	ASTExplorer(ast_explorer::ExplorerArguments),
-	// #[cfg(debug_assertions)]
-	// Pack(Pack),
+    Info(Info),
+    // Build(BuildArguments),
+    // Check(CheckArguments),
+    // Run(RunArguments),
+    // Repl(repl::ReplArguments),
+    ASTExplorer(ast_explorer::ExplorerArguments),
+    // #[cfg(debug_assertions)]
+    // Pack(Pack),
 }
 
 /// Display Ezno information
@@ -115,81 +115,81 @@ struct Info {}
 
 #[allow(unused)]
 fn file_system_resolver(path: &Path) -> Option<(String, Vec<(usize, parser::EmptyCursorId)>)> {
-	// Cheaty
-	if path.to_str() == Some("BLANK") {
-		return Some((String::new(), Vec::new()));
-	}
-	match fs::read_to_string(path) {
-		Ok(source) => Some((source, Vec::new())),
-		Err(_) => None,
-	}
+    // Cheaty
+    if path.to_str() == Some("BLANK") {
+        return Some((String::new(), Vec::new()));
+    }
+    match fs::read_to_string(path) {
+        Ok(source) => Some((source, Vec::new())),
+        Err(_) => None,
+    }
 }
 
 fn main() {
-	if env::args().len() == 1 {
-		utilities::print_info();
-		return;
-	}
+    if env::args().len() == 1 {
+        utilities::print_info();
+        return;
+    }
 
-	let args: TopLevel = argh::from_env();
+    let args: TopLevel = argh::from_env();
 
-	// std::panic::set_hook
+    // std::panic::set_hook
 
-	match args.nested {
-		CompilerSubCommand::Info(_) => {
-			utilities::print_info();
-		}
-		// CompilerSubCommand::Build(build_config) => {
-		// 	let _output = build(build_config);
-		// }
-		CompilerSubCommand::ASTExplorer(mut repl) => repl.run(),
-		// CompilerSubCommand::Run(run_arguments) => {
-		// 	let build_arguments = BuildArguments {
-		// 		input: run_arguments.input,
-		// 		output: Some(run_arguments.output.clone()),
-		// 		minify: true,
-		// 		no_comments: true,
-		// 		source_maps: false,
-		// 		watch: false,
-		// 		timings: false,
-		// 	};
-		// 	let output = build(build_arguments);
+    match args.nested {
+        CompilerSubCommand::Info(_) => {
+            utilities::print_info();
+        }
+        // CompilerSubCommand::Build(build_config) => {
+        // 	let _output = build(build_config);
+        // }
+        CompilerSubCommand::ASTExplorer(mut repl) => repl.run(),
+        // CompilerSubCommand::Run(run_arguments) => {
+        // 	let build_arguments = BuildArguments {
+        // 		input: run_arguments.input,
+        // 		output: Some(run_arguments.output.clone()),
+        // 		minify: true,
+        // 		no_comments: true,
+        // 		source_maps: false,
+        // 		watch: false,
+        // 		timings: false,
+        // 	};
+        // 	let output = build(build_arguments);
 
-		// 	if output.is_ok() {
-		// 		Command::new("deno")
-		// 			.args(["run", "--allow-all", run_arguments.output.to_str().unwrap()])
-		// 			.spawn()
-		// 			.unwrap()
-		// 			.wait()
-		// 			.unwrap();
-		// 	}
-		// }
-		// CompilerSubCommand::Check(check_arguments) => {
-		// 	let CheckArguments { input, watch } = check_arguments;
-		// 	check(input, watch)
-		// }
-		// #[cfg(debug_assertions)]
-		// CompilerSubCommand::Pack(Pack { input, output }) => {
-		// 	let file = checker::definition_file_to_buffer(
-		// 		&file_system_resolver,
-		// 		&env::current_dir().unwrap(),
-		// 		&input,
-		// 	)
-		// 	.unwrap();
+        // 	if output.is_ok() {
+        // 		Command::new("deno")
+        // 			.args(["run", "--allow-all", run_arguments.output.to_str().unwrap()])
+        // 			.spawn()
+        // 			.unwrap()
+        // 			.wait()
+        // 			.unwrap();
+        // 	}
+        // }
+        // CompilerSubCommand::Check(check_arguments) => {
+        // 	let CheckArguments { input, watch } = check_arguments;
+        // 	check(input, watch)
+        // }
+        // #[cfg(debug_assertions)]
+        // CompilerSubCommand::Pack(Pack { input, output }) => {
+        // 	let file = checker::definition_file_to_buffer(
+        // 		&file_system_resolver,
+        // 		&env::current_dir().unwrap(),
+        // 		&input,
+        // 	)
+        // 	.unwrap();
 
-		// 	std::fs::write(&output, &file).unwrap();
-		// 	// println!("Wrote binary context out to {}", output.display());
+        // 	std::fs::write(&output, &file).unwrap();
+        // 	// println!("Wrote binary context out to {}", output.display());
 
-		// 	let _root_ctx = checker::root_context_from_bytes(file);
-		// 	println!("Registered {} types", _root_ctx.types.len());
-		// }
-		// CompilerSubCommand::Repl(argument) => repl::run_deno_repl(argument),
-	}
+        // 	let _root_ctx = checker::root_context_from_bytes(file);
+        // 	println!("Registered {} types", _root_ctx.types.len());
+        // }
+        // CompilerSubCommand::Repl(argument) => repl::run_deno_repl(argument),
+    }
 }
 
 /// TODO + deserialize
 struct _Settings {
-	current_working_directory: Option<PathBuf>,
+    current_working_directory: Option<PathBuf>,
 }
 
 // fn check(entry_point: PathBuf, watch: bool) {

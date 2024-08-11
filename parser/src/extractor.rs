@@ -6,18 +6,18 @@ use derive_enum_from_into::EnumFrom;
 use source_map::Span;
 
 pub trait GetFunction<T: FunctionBased + 'static> {
-	fn get_function_ref(&self, id: FunctionId<T>) -> Option<&FunctionBase<T>>;
+    fn get_function_ref(&self, id: FunctionId<T>) -> Option<&FunctionBase<T>>;
 
-	fn get_function(&mut self, id: FunctionId<T>) -> FunctionBase<T>;
+    fn get_function(&mut self, id: FunctionId<T>) -> FunctionBase<T>;
 
-	fn insert_function(&mut self, func: FunctionBase<T>);
+    fn insert_function(&mut self, func: FunctionBase<T>);
 
-	fn new_extracted_function(&mut self, func: FunctionBase<T>) -> ExtractedFunction<T> {
-		let id = func.get_function_id();
-		let func_pos = crate::ASTNode::get_position(&func).into_owned();
-		self.insert_function(func);
-		ExtractedFunction(id, func_pos)
-	}
+    fn new_extracted_function(&mut self, func: FunctionBase<T>) -> ExtractedFunction<T> {
+        let id = func.get_function_id();
+        let func_pos = crate::ASTNode::get_position(&func).into_owned();
+        self.insert_function(func);
+        ExtractedFunction(id, func_pos)
+    }
 }
 
 /// - Creates a `UniversalFunctionId`, a sum type over various [FunctionId]s
@@ -58,12 +58,12 @@ macro_rules! make_extracted_functions {
 }
 
 make_extracted_functions! {
-	ArrowFunctionBase,
-	ExpressionFunctionBase,
-	StatementFunctionBase,
-	ObjectLiteralMethodBase,
-	ClassConstructorBase,
-	ClassFunctionBase
+    ArrowFunctionBase,
+    ExpressionFunctionBase,
+    StatementFunctionBase,
+    ObjectLiteralMethodBase,
+    ClassConstructorBase,
+    ClassFunctionBase
 }
 
 /// New type purely for [Visitable] implementation
@@ -72,68 +72,74 @@ pub struct ExtractedFunction<T: FunctionBased>(pub FunctionId<T>, pub source_map
 
 #[cfg(feature = "self-rust-tokenize")]
 impl<T: FunctionBased> self_rust_tokenize::SelfRustTokenize for ExtractedFunction<T> {
-	fn append_to_token_stream(
-		&self,
-		_token_stream: &mut self_rust_tokenize::proc_macro2::TokenStream,
-	) {
-		todo!("extracted function to tokens")
-	}
+    fn append_to_token_stream(
+        &self,
+        _token_stream: &mut self_rust_tokenize::proc_macro2::TokenStream,
+    ) {
+        todo!("extracted function to tokens")
+    }
 }
 
 impl<T: FunctionBased> ExtractedFunction<T> {
-	pub fn get_position(&self) -> Cow<Span> {
-		Cow::Borrowed(&self.1)
-	}
+    pub fn get_position(&self) -> Cow<Span> {
+        Cow::Borrowed(&self.1)
+    }
 }
 
 impl ExtractedFunctions {
-	pub fn merge(&mut self, other: Self) {
-		self.ArrowFunctionBase.extend(other.ArrowFunctionBase.into_iter());
-		self.ClassConstructorBase.extend(other.ClassConstructorBase.into_iter());
-		self.ClassFunctionBase.extend(other.ClassFunctionBase.into_iter());
-		self.ExpressionFunctionBase.extend(other.ExpressionFunctionBase.into_iter());
-		self.ObjectLiteralMethodBase.extend(other.ObjectLiteralMethodBase.into_iter());
-		self.StatementFunctionBase.extend(other.StatementFunctionBase.into_iter());
-	}
+    pub fn merge(&mut self, other: Self) {
+        self.ArrowFunctionBase
+            .extend(other.ArrowFunctionBase.into_iter());
+        self.ClassConstructorBase
+            .extend(other.ClassConstructorBase.into_iter());
+        self.ClassFunctionBase
+            .extend(other.ClassFunctionBase.into_iter());
+        self.ExpressionFunctionBase
+            .extend(other.ExpressionFunctionBase.into_iter());
+        self.ObjectLiteralMethodBase
+            .extend(other.ObjectLiteralMethodBase.into_iter());
+        self.StatementFunctionBase
+            .extend(other.StatementFunctionBase.into_iter());
+    }
 
-	pub fn is_empty(&self) -> bool {
-		self.ArrowFunctionBase.is_empty()
-			&& self.ClassConstructorBase.is_empty()
-			&& self.ClassFunctionBase.is_empty()
-			&& self.ExpressionFunctionBase.is_empty()
-			&& self.ObjectLiteralMethodBase.is_empty()
-			&& self.StatementFunctionBase.is_empty()
-	}
+    pub fn is_empty(&self) -> bool {
+        self.ArrowFunctionBase.is_empty()
+            && self.ClassConstructorBase.is_empty()
+            && self.ClassFunctionBase.is_empty()
+            && self.ExpressionFunctionBase.is_empty()
+            && self.ObjectLiteralMethodBase.is_empty()
+            && self.StatementFunctionBase.is_empty()
+    }
 }
 
 impl<T: FunctionBased + 'static> Visitable for ExtractedFunction<T>
 where
-	ExtractedFunctions: GetFunction<T>,
-	FunctionBase<T>: Visitable,
+    ExtractedFunctions: GetFunction<T>,
+    FunctionBase<T>: Visitable,
 {
-	fn visit<TData>(
-		&self,
-		visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
-		data: &mut TData,
-		settings: &crate::VisitSettings,
-		functions: &mut ExtractedFunctions,
-		chain: &mut temporary_annex::Annex<crate::Chain>,
-	) {
-		let function: FunctionBase<T> = functions.get_function(self.0);
-		function.visit(visitors, data, settings, functions, chain);
-		functions.insert_function(function)
-	}
+    fn visit<TData>(
+        &self,
+        visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
+        data: &mut TData,
+        settings: &crate::VisitSettings,
+        functions: &mut ExtractedFunctions,
+        chain: &mut temporary_annex::Annex<crate::Chain>,
+    ) {
+        let function: FunctionBase<T> = functions.get_function(self.0);
+        function.visit(visitors, data, settings, functions, chain);
+        functions.insert_function(function)
+    }
 
-	fn visit_mut<TData>(
-		&mut self,
-		visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
-		data: &mut TData,
-		settings: &crate::VisitSettings,
-		functions: &mut ExtractedFunctions,
-		chain: &mut temporary_annex::Annex<crate::Chain>,
-	) {
-		let mut function: FunctionBase<T> = functions.get_function(self.0);
-		function.visit_mut(visitors, data, settings, functions, chain);
-		functions.insert_function(function)
-	}
+    fn visit_mut<TData>(
+        &mut self,
+        visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
+        data: &mut TData,
+        settings: &crate::VisitSettings,
+        functions: &mut ExtractedFunctions,
+        chain: &mut temporary_annex::Annex<crate::Chain>,
+    ) {
+        let mut function: FunctionBase<T> = functions.get_function(self.0);
+        function.visit_mut(visitors, data, settings, functions, chain);
+        functions.insert_function(function)
+    }
 }

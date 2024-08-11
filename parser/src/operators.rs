@@ -52,406 +52,415 @@ pub enum UnaryOperator {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "self-rust-tokenize", derive(self_rust_tokenize::SelfRustTokenize))]
+#[cfg_attr(
+    feature = "self-rust-tokenize",
+    derive(self_rust_tokenize::SelfRustTokenize)
+)]
 pub enum IncrementOrDecrement {
-	Increment,
-	Decrement,
+    Increment,
+    Decrement,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "self-rust-tokenize", derive(self_rust_tokenize::SelfRustTokenize))]
+#[cfg_attr(
+    feature = "self-rust-tokenize",
+    derive(self_rust_tokenize::SelfRustTokenize)
+)]
 pub enum UnaryPrefixAssignmentOperator {
-	Invert,
-	IncrementOrDecrement(IncrementOrDecrement),
+    Invert,
+    IncrementOrDecrement(IncrementOrDecrement),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "self-rust-tokenize", derive(self_rust_tokenize::SelfRustTokenize))]
+#[cfg_attr(
+    feature = "self-rust-tokenize",
+    derive(self_rust_tokenize::SelfRustTokenize)
+)]
 pub struct UnaryPostfixAssignmentOperator(pub IncrementOrDecrement);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum AssociativityDirection {
-	NA,
-	LeftToRight,
-	RightToLeft,
+    NA,
+    LeftToRight,
+    RightToLeft,
 }
 
 impl AssociativityDirection {
-	pub(crate) fn should_return(self, parent_precedence: u8, upcoming_precedence: u8) -> bool {
-		match self {
-			AssociativityDirection::RightToLeft => parent_precedence > upcoming_precedence,
-			AssociativityDirection::NA | AssociativityDirection::LeftToRight => {
-				parent_precedence >= upcoming_precedence
-			}
-		}
-	}
+    pub(crate) fn should_return(self, parent_precedence: u8, upcoming_precedence: u8) -> bool {
+        match self {
+            AssociativityDirection::RightToLeft => parent_precedence > upcoming_precedence,
+            AssociativityDirection::NA | AssociativityDirection::LeftToRight => {
+                parent_precedence >= upcoming_precedence
+            }
+        }
+    }
 }
 
 pub trait Operator: for<'a> TryFrom<&'a TSXToken> {
-	/// String representation of operator
-	fn to_str(&self) -> &'static str;
+    /// String representation of operator
+    fn to_str(&self) -> &'static str;
 
-	/// Taken from: <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table>
-	fn precedence(&self) -> u8;
+    /// Taken from: <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table>
+    fn precedence(&self) -> u8;
 
-	/// Returns the associativity of the operator. Taken from: <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table>
-	fn associativity_direction(&self) -> AssociativityDirection;
+    /// Returns the associativity of the operator. Taken from: <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence#table>
+    fn associativity_direction(&self) -> AssociativityDirection;
 
-	/// Is associative with self <https://en.wikipedia.org/wiki/Associative_property>
-	fn is_associative(&self) -> bool;
+    /// Is associative with self <https://en.wikipedia.org/wiki/Associative_property>
+    fn is_associative(&self) -> bool;
 
-	fn precedence_and_associativity_direction(&self) -> (u8, AssociativityDirection) {
-		(self.precedence(), self.associativity_direction())
-	}
+    fn precedence_and_associativity_direction(&self) -> (u8, AssociativityDirection) {
+        (self.precedence(), self.associativity_direction())
+    }
 }
 
 impl Operator for BinaryOperator {
-	fn to_str(&self) -> &'static str {
-		match self {
-			BinaryOperator::Add => "+",
-			BinaryOperator::Subtract => "-",
-			BinaryOperator::Multiply => "*",
-			BinaryOperator::Divide => "/",
-			BinaryOperator::Exponent => "**",
-			BinaryOperator::LessThan => "<",
-			BinaryOperator::GreaterThan => ">",
-			BinaryOperator::LessThanEqual => "<=",
-			BinaryOperator::GreaterThanEqual => ">",
-			BinaryOperator::Equal => "==",
-			BinaryOperator::StrictEqual => "===",
-			BinaryOperator::NotEqual => "!=",
-			BinaryOperator::StrictNotEqual => "!==",
-			BinaryOperator::Modulo => "%",
-			BinaryOperator::NullCoalescing => "??",
-			BinaryOperator::LogicalAnd => "&&",
-			BinaryOperator::LogicalOr => "||",
-			BinaryOperator::BitwiseShiftLeft => "<<",
-			BinaryOperator::BitwiseShiftRight => ">>",
-			BinaryOperator::BitwiseShiftRightUnsigned => ">>>",
-			BinaryOperator::BitwiseAnd => "&",
-			BinaryOperator::BitwiseOr => "|",
-			BinaryOperator::BitwiseXOr => "^",
-			BinaryOperator::InstanceOf => "instanceof",
-			BinaryOperator::In => "in",
-			BinaryOperator::Divides => "∣",
-			BinaryOperator::Pipe => "|>",
-			BinaryOperator::Compose => "∘",
-		}
-	}
+    fn to_str(&self) -> &'static str {
+        match self {
+            BinaryOperator::Add => "+",
+            BinaryOperator::Subtract => "-",
+            BinaryOperator::Multiply => "*",
+            BinaryOperator::Divide => "/",
+            BinaryOperator::Exponent => "**",
+            BinaryOperator::LessThan => "<",
+            BinaryOperator::GreaterThan => ">",
+            BinaryOperator::LessThanEqual => "<=",
+            BinaryOperator::GreaterThanEqual => ">",
+            BinaryOperator::Equal => "==",
+            BinaryOperator::StrictEqual => "===",
+            BinaryOperator::NotEqual => "!=",
+            BinaryOperator::StrictNotEqual => "!==",
+            BinaryOperator::Modulo => "%",
+            BinaryOperator::NullCoalescing => "??",
+            BinaryOperator::LogicalAnd => "&&",
+            BinaryOperator::LogicalOr => "||",
+            BinaryOperator::BitwiseShiftLeft => "<<",
+            BinaryOperator::BitwiseShiftRight => ">>",
+            BinaryOperator::BitwiseShiftRightUnsigned => ">>>",
+            BinaryOperator::BitwiseAnd => "&",
+            BinaryOperator::BitwiseOr => "|",
+            BinaryOperator::BitwiseXOr => "^",
+            BinaryOperator::InstanceOf => "instanceof",
+            BinaryOperator::In => "in",
+            BinaryOperator::Divides => "∣",
+            BinaryOperator::Pipe => "|>",
+            BinaryOperator::Compose => "∘",
+        }
+    }
 
-	fn precedence(&self) -> u8 {
-		match self {
-			BinaryOperator::Exponent => 14,
-			BinaryOperator::Multiply => 13,
-			BinaryOperator::Divide => 13,
-			BinaryOperator::Modulo => 13,
-			BinaryOperator::Add => 12,
-			BinaryOperator::Subtract => 12,
-			BinaryOperator::BitwiseShiftLeft => 11,
-			BinaryOperator::BitwiseShiftRight => 11,
-			BinaryOperator::BitwiseShiftRightUnsigned => 11,
-			BinaryOperator::LessThan => 10,
-			BinaryOperator::LessThanEqual => 10,
-			BinaryOperator::GreaterThan => 10,
-			BinaryOperator::GreaterThanEqual => 10,
-			BinaryOperator::In => 10,
-			BinaryOperator::InstanceOf => 10,
-			BinaryOperator::Equal
-			| BinaryOperator::NotEqual
-			| BinaryOperator::StrictEqual
-			| BinaryOperator::StrictNotEqual => 9,
-			BinaryOperator::BitwiseAnd => 8,
-			BinaryOperator::BitwiseXOr => 7,
-			BinaryOperator::BitwiseOr => 6,
-			BinaryOperator::LogicalAnd => 5,
-			BinaryOperator::NullCoalescing => 4,
-			BinaryOperator::LogicalOr => 4,
-			// Same as modulo
-			BinaryOperator::Divides => 13,
-			// No idea
-			BinaryOperator::Pipe => 15,
-			BinaryOperator::Compose => 15,
-		}
-	}
+    fn precedence(&self) -> u8 {
+        match self {
+            BinaryOperator::Exponent => 14,
+            BinaryOperator::Multiply => 13,
+            BinaryOperator::Divide => 13,
+            BinaryOperator::Modulo => 13,
+            BinaryOperator::Add => 12,
+            BinaryOperator::Subtract => 12,
+            BinaryOperator::BitwiseShiftLeft => 11,
+            BinaryOperator::BitwiseShiftRight => 11,
+            BinaryOperator::BitwiseShiftRightUnsigned => 11,
+            BinaryOperator::LessThan => 10,
+            BinaryOperator::LessThanEqual => 10,
+            BinaryOperator::GreaterThan => 10,
+            BinaryOperator::GreaterThanEqual => 10,
+            BinaryOperator::In => 10,
+            BinaryOperator::InstanceOf => 10,
+            BinaryOperator::Equal
+            | BinaryOperator::NotEqual
+            | BinaryOperator::StrictEqual
+            | BinaryOperator::StrictNotEqual => 9,
+            BinaryOperator::BitwiseAnd => 8,
+            BinaryOperator::BitwiseXOr => 7,
+            BinaryOperator::BitwiseOr => 6,
+            BinaryOperator::LogicalAnd => 5,
+            BinaryOperator::NullCoalescing => 4,
+            BinaryOperator::LogicalOr => 4,
+            // Same as modulo
+            BinaryOperator::Divides => 13,
+            // No idea
+            BinaryOperator::Pipe => 15,
+            BinaryOperator::Compose => 15,
+        }
+    }
 
-	fn associativity_direction(&self) -> AssociativityDirection {
-		if let BinaryOperator::Exponent = self {
-			AssociativityDirection::RightToLeft
-		} else {
-			AssociativityDirection::LeftToRight
-		}
-	}
+    fn associativity_direction(&self) -> AssociativityDirection {
+        if let BinaryOperator::Exponent = self {
+            AssociativityDirection::RightToLeft
+        } else {
+            AssociativityDirection::LeftToRight
+        }
+    }
 
-	fn is_associative(&self) -> bool {
-		!matches!(self, Self::Subtract | Self::Exponent | Self::Divide)
-	}
+    fn is_associative(&self) -> bool {
+        !matches!(self, Self::Subtract | Self::Exponent | Self::Divide)
+    }
 }
 
 impl Operator for UnaryOperator {
-	fn to_str(&self) -> &'static str {
-		match self {
-			UnaryOperator::Plus => "+",
-			UnaryOperator::Negation => "-",
-			UnaryOperator::BitwiseNot => "~",
-			UnaryOperator::LogicalNot => "!",
-			UnaryOperator::Delete => "delete ",
-			UnaryOperator::Yield => "yield ",
-			UnaryOperator::DelegatedYield => "yield* ",
-			UnaryOperator::Await => "await ",
-			UnaryOperator::TypeOf => "typeof ",
-			UnaryOperator::Void => "void ",
-		}
-	}
+    fn to_str(&self) -> &'static str {
+        match self {
+            UnaryOperator::Plus => "+",
+            UnaryOperator::Negation => "-",
+            UnaryOperator::BitwiseNot => "~",
+            UnaryOperator::LogicalNot => "!",
+            UnaryOperator::Delete => "delete ",
+            UnaryOperator::Yield => "yield ",
+            UnaryOperator::DelegatedYield => "yield* ",
+            UnaryOperator::Await => "await ",
+            UnaryOperator::TypeOf => "typeof ",
+            UnaryOperator::Void => "void ",
+        }
+    }
 
-	fn precedence(&self) -> u8 {
-		match self {
-			UnaryOperator::TypeOf
-			| UnaryOperator::Await
-			| UnaryOperator::Delete
-			| UnaryOperator::Void
-			| UnaryOperator::BitwiseNot
-			| UnaryOperator::LogicalNot
-			| UnaryOperator::Plus
-			| UnaryOperator::Negation => 15,
-			UnaryOperator::Yield | UnaryOperator::DelegatedYield => 2,
-		}
-	}
+    fn precedence(&self) -> u8 {
+        match self {
+            UnaryOperator::TypeOf
+            | UnaryOperator::Await
+            | UnaryOperator::Delete
+            | UnaryOperator::Void
+            | UnaryOperator::BitwiseNot
+            | UnaryOperator::LogicalNot
+            | UnaryOperator::Plus
+            | UnaryOperator::Negation => 15,
+            UnaryOperator::Yield | UnaryOperator::DelegatedYield => 2,
+        }
+    }
 
-	fn associativity_direction(&self) -> AssociativityDirection {
-		AssociativityDirection::RightToLeft
-	}
+    fn associativity_direction(&self) -> AssociativityDirection {
+        AssociativityDirection::RightToLeft
+    }
 
-	fn is_associative(&self) -> bool {
-		true
-	}
+    fn is_associative(&self) -> bool {
+        true
+    }
 }
 
 impl Operator for BinaryAssignmentOperator {
-	fn to_str(&self) -> &'static str {
-		match self {
-			BinaryAssignmentOperator::LogicalNullishAssignment => "??=",
-			BinaryAssignmentOperator::AddAssign => "+=",
-			BinaryAssignmentOperator::SubtractAssign => "-=",
-			BinaryAssignmentOperator::MultiplyAssign => "*=",
-			BinaryAssignmentOperator::DivideAssign => "/=",
-			BinaryAssignmentOperator::ModuloAssign => "%=",
-			BinaryAssignmentOperator::ExponentAssign => "**=",
-			BinaryAssignmentOperator::BitwiseShiftLeftAssign => "<<=",
-			BinaryAssignmentOperator::BitwiseShiftRightAssign => ">>=",
-			BinaryAssignmentOperator::BitwiseShiftRightUnsignedAssign => ">>>=",
-			BinaryAssignmentOperator::BitwiseAndAssign => "&=",
-			BinaryAssignmentOperator::BitwiseXOrAssign => "^=",
-			BinaryAssignmentOperator::BitOrAssign => "|=",
-			BinaryAssignmentOperator::LogicalAndAssign => "&&=",
-			BinaryAssignmentOperator::LogicalOrAssign => "||=",
-		}
-	}
+    fn to_str(&self) -> &'static str {
+        match self {
+            BinaryAssignmentOperator::LogicalNullishAssignment => "??=",
+            BinaryAssignmentOperator::AddAssign => "+=",
+            BinaryAssignmentOperator::SubtractAssign => "-=",
+            BinaryAssignmentOperator::MultiplyAssign => "*=",
+            BinaryAssignmentOperator::DivideAssign => "/=",
+            BinaryAssignmentOperator::ModuloAssign => "%=",
+            BinaryAssignmentOperator::ExponentAssign => "**=",
+            BinaryAssignmentOperator::BitwiseShiftLeftAssign => "<<=",
+            BinaryAssignmentOperator::BitwiseShiftRightAssign => ">>=",
+            BinaryAssignmentOperator::BitwiseShiftRightUnsignedAssign => ">>>=",
+            BinaryAssignmentOperator::BitwiseAndAssign => "&=",
+            BinaryAssignmentOperator::BitwiseXOrAssign => "^=",
+            BinaryAssignmentOperator::BitOrAssign => "|=",
+            BinaryAssignmentOperator::LogicalAndAssign => "&&=",
+            BinaryAssignmentOperator::LogicalOrAssign => "||=",
+        }
+    }
 
-	fn precedence(&self) -> u8 {
-		ASSIGNMENT_PRECEDENCE
-	}
+    fn precedence(&self) -> u8 {
+        ASSIGNMENT_PRECEDENCE
+    }
 
-	fn associativity_direction(&self) -> AssociativityDirection {
-		AssociativityDirection::RightToLeft
-	}
+    fn associativity_direction(&self) -> AssociativityDirection {
+        AssociativityDirection::RightToLeft
+    }
 
-	fn is_associative(&self) -> bool {
-		// dbg!("TODO not sure");
-		true
-	}
+    fn is_associative(&self) -> bool {
+        // dbg!("TODO not sure");
+        true
+    }
 }
 
 impl Operator for UnaryPrefixAssignmentOperator {
-	fn precedence(&self) -> u8 {
-		15
-	}
+    fn precedence(&self) -> u8 {
+        15
+    }
 
-	fn associativity_direction(&self) -> AssociativityDirection {
-		AssociativityDirection::RightToLeft
-	}
+    fn associativity_direction(&self) -> AssociativityDirection {
+        AssociativityDirection::RightToLeft
+    }
 
-	fn to_str(&self) -> &'static str {
-		match self {
-			UnaryPrefixAssignmentOperator::Invert => "¡",
-			UnaryPrefixAssignmentOperator::IncrementOrDecrement(inc_or_dec) => inc_or_dec.to_str(),
-		}
-	}
+    fn to_str(&self) -> &'static str {
+        match self {
+            UnaryPrefixAssignmentOperator::Invert => "¡",
+            UnaryPrefixAssignmentOperator::IncrementOrDecrement(inc_or_dec) => inc_or_dec.to_str(),
+        }
+    }
 
-	fn is_associative(&self) -> bool {
-		true
-	}
+    fn is_associative(&self) -> bool {
+        true
+    }
 }
 
 impl Operator for UnaryPostfixAssignmentOperator {
-	fn precedence(&self) -> u8 {
-		16
-	}
+    fn precedence(&self) -> u8 {
+        16
+    }
 
-	fn associativity_direction(&self) -> AssociativityDirection {
-		AssociativityDirection::NA
-	}
+    fn associativity_direction(&self) -> AssociativityDirection {
+        AssociativityDirection::NA
+    }
 
-	fn to_str(&self) -> &'static str {
-		self.0.to_str()
-	}
+    fn to_str(&self) -> &'static str {
+        self.0.to_str()
+    }
 
-	fn is_associative(&self) -> bool {
-		true
-	}
+    fn is_associative(&self) -> bool {
+        true
+    }
 }
 
 impl IncrementOrDecrement {
-	fn to_str(self) -> &'static str {
-		match self {
-			IncrementOrDecrement::Increment => "++",
-			IncrementOrDecrement::Decrement => "--",
-		}
-	}
+    fn to_str(self) -> &'static str {
+        match self {
+            IncrementOrDecrement::Increment => "++",
+            IncrementOrDecrement::Decrement => "--",
+        }
+    }
 }
 
 impl From<BinaryAssignmentOperator> for BinaryOperator {
-	fn from(val: BinaryAssignmentOperator) -> Self {
-		match val {
-			BinaryAssignmentOperator::LogicalNullishAssignment => BinaryOperator::NullCoalescing,
-			BinaryAssignmentOperator::AddAssign => BinaryOperator::Add,
-			BinaryAssignmentOperator::SubtractAssign => BinaryOperator::Subtract,
-			BinaryAssignmentOperator::MultiplyAssign => BinaryOperator::Multiply,
-			BinaryAssignmentOperator::DivideAssign => BinaryOperator::Divide,
-			BinaryAssignmentOperator::ModuloAssign => BinaryOperator::Modulo,
-			BinaryAssignmentOperator::ExponentAssign => BinaryOperator::Exponent,
-			BinaryAssignmentOperator::LogicalAndAssign => BinaryOperator::LogicalAnd,
-			BinaryAssignmentOperator::LogicalOrAssign => BinaryOperator::LogicalOr,
-			BinaryAssignmentOperator::BitwiseShiftLeftAssign => BinaryOperator::BitwiseShiftLeft,
-			BinaryAssignmentOperator::BitwiseShiftRightAssign => BinaryOperator::BitwiseShiftRight,
-			BinaryAssignmentOperator::BitwiseShiftRightUnsignedAssign => {
-				BinaryOperator::BitwiseShiftRightUnsigned
-			}
-			BinaryAssignmentOperator::BitwiseAndAssign => BinaryOperator::BitwiseAnd,
-			BinaryAssignmentOperator::BitwiseXOrAssign => BinaryOperator::BitwiseXOr,
-			BinaryAssignmentOperator::BitOrAssign => BinaryOperator::BitwiseOr,
-		}
-	}
+    fn from(val: BinaryAssignmentOperator) -> Self {
+        match val {
+            BinaryAssignmentOperator::LogicalNullishAssignment => BinaryOperator::NullCoalescing,
+            BinaryAssignmentOperator::AddAssign => BinaryOperator::Add,
+            BinaryAssignmentOperator::SubtractAssign => BinaryOperator::Subtract,
+            BinaryAssignmentOperator::MultiplyAssign => BinaryOperator::Multiply,
+            BinaryAssignmentOperator::DivideAssign => BinaryOperator::Divide,
+            BinaryAssignmentOperator::ModuloAssign => BinaryOperator::Modulo,
+            BinaryAssignmentOperator::ExponentAssign => BinaryOperator::Exponent,
+            BinaryAssignmentOperator::LogicalAndAssign => BinaryOperator::LogicalAnd,
+            BinaryAssignmentOperator::LogicalOrAssign => BinaryOperator::LogicalOr,
+            BinaryAssignmentOperator::BitwiseShiftLeftAssign => BinaryOperator::BitwiseShiftLeft,
+            BinaryAssignmentOperator::BitwiseShiftRightAssign => BinaryOperator::BitwiseShiftRight,
+            BinaryAssignmentOperator::BitwiseShiftRightUnsignedAssign => {
+                BinaryOperator::BitwiseShiftRightUnsigned
+            }
+            BinaryAssignmentOperator::BitwiseAndAssign => BinaryOperator::BitwiseAnd,
+            BinaryAssignmentOperator::BitwiseXOrAssign => BinaryOperator::BitwiseXOr,
+            BinaryAssignmentOperator::BitOrAssign => BinaryOperator::BitwiseOr,
+        }
+    }
 }
 
 impl TryFrom<&TSXToken> for BinaryAssignmentOperator {
-	type Error = ();
+    type Error = ();
 
-	fn try_from(expression: &TSXToken) -> Result<Self, Self::Error> {
-		match expression {
-			TSXToken::AddAssign => Ok(BinaryAssignmentOperator::AddAssign),
-			TSXToken::SubtractAssign => Ok(BinaryAssignmentOperator::SubtractAssign),
-			TSXToken::MultiplyAssign => Ok(BinaryAssignmentOperator::MultiplyAssign),
-			TSXToken::DivideAssign => Ok(BinaryAssignmentOperator::DivideAssign),
-			TSXToken::ExponentAssign => Ok(BinaryAssignmentOperator::ExponentAssign),
-			TSXToken::LogicalAndAssign => Ok(BinaryAssignmentOperator::LogicalAndAssign),
-			TSXToken::LogicalOrAssign => Ok(BinaryAssignmentOperator::LogicalOrAssign),
-			TSXToken::BitwiseOrAssign => Ok(BinaryAssignmentOperator::BitOrAssign),
-			TSXToken::BitwiseXorAssign => Ok(BinaryAssignmentOperator::BitwiseXOrAssign),
-			TSXToken::NullishCoalescingAssign => {
-				Ok(BinaryAssignmentOperator::LogicalNullishAssignment)
-			}
-			_ => Err(()),
-		}
-	}
+    fn try_from(expression: &TSXToken) -> Result<Self, Self::Error> {
+        match expression {
+            TSXToken::AddAssign => Ok(BinaryAssignmentOperator::AddAssign),
+            TSXToken::SubtractAssign => Ok(BinaryAssignmentOperator::SubtractAssign),
+            TSXToken::MultiplyAssign => Ok(BinaryAssignmentOperator::MultiplyAssign),
+            TSXToken::DivideAssign => Ok(BinaryAssignmentOperator::DivideAssign),
+            TSXToken::ExponentAssign => Ok(BinaryAssignmentOperator::ExponentAssign),
+            TSXToken::LogicalAndAssign => Ok(BinaryAssignmentOperator::LogicalAndAssign),
+            TSXToken::LogicalOrAssign => Ok(BinaryAssignmentOperator::LogicalOrAssign),
+            TSXToken::BitwiseOrAssign => Ok(BinaryAssignmentOperator::BitOrAssign),
+            TSXToken::BitwiseXorAssign => Ok(BinaryAssignmentOperator::BitwiseXOrAssign),
+            TSXToken::NullishCoalescingAssign => {
+                Ok(BinaryAssignmentOperator::LogicalNullishAssignment)
+            }
+            _ => Err(()),
+        }
+    }
 }
 
 impl TryFrom<&TSXToken> for BinaryOperator {
-	type Error = ();
+    type Error = ();
 
-	fn try_from(expression: &TSXToken) -> Result<Self, Self::Error> {
-		match expression {
-			TSXToken::Add => Ok(BinaryOperator::Add),
-			TSXToken::Subtract => Ok(BinaryOperator::Subtract),
-			TSXToken::Multiply => Ok(BinaryOperator::Multiply),
-			TSXToken::Divide => Ok(BinaryOperator::Divide),
-			TSXToken::Exponent => Ok(BinaryOperator::Exponent),
-			TSXToken::Modulo => Ok(BinaryOperator::Modulo),
-			TSXToken::Equal => Ok(BinaryOperator::Equal),
-			TSXToken::NotEqual => Ok(BinaryOperator::NotEqual),
-			TSXToken::StrictEqual => Ok(BinaryOperator::StrictEqual),
-			TSXToken::StrictNotEqual => Ok(BinaryOperator::StrictNotEqual),
-			TSXToken::LogicalOr => Ok(BinaryOperator::LogicalOr),
-			TSXToken::LogicalAnd => Ok(BinaryOperator::LogicalAnd),
-			TSXToken::OpenChevron => Ok(BinaryOperator::LessThan),
-			TSXToken::LessThanEqual => Ok(BinaryOperator::LessThanEqual),
-			TSXToken::CloseChevron => Ok(BinaryOperator::GreaterThan),
-			TSXToken::GreaterThanEqual => Ok(BinaryOperator::GreaterThanEqual),
-			TSXToken::Keyword(TSXKeyword::In) => Ok(BinaryOperator::In),
-			TSXToken::Keyword(TSXKeyword::InstanceOf) => Ok(BinaryOperator::InstanceOf),
-			TSXToken::BitwiseAnd => Ok(BinaryOperator::BitwiseAnd),
-			TSXToken::BitwiseOr => Ok(BinaryOperator::BitwiseOr),
-			TSXToken::BitwiseXOr => Ok(BinaryOperator::BitwiseXOr),
-			TSXToken::BitwiseShiftLeft => Ok(BinaryOperator::BitwiseShiftLeft),
-			TSXToken::BitwiseShiftRight => Ok(BinaryOperator::BitwiseShiftRight),
-			TSXToken::BitwiseShiftRightUnsigned => Ok(BinaryOperator::BitwiseShiftRightUnsigned),
-			TSXToken::NullishCoalescing => Ok(BinaryOperator::NullCoalescing),
-			TSXToken::DividesOperator => Ok(BinaryOperator::Divides),
-			TSXToken::ComposeOperator => Ok(BinaryOperator::Compose),
-			TSXToken::PipeOperator => Ok(BinaryOperator::Pipe),
-			_ => Err(()),
-		}
-	}
+    fn try_from(expression: &TSXToken) -> Result<Self, Self::Error> {
+        match expression {
+            TSXToken::Add => Ok(BinaryOperator::Add),
+            TSXToken::Subtract => Ok(BinaryOperator::Subtract),
+            TSXToken::Multiply => Ok(BinaryOperator::Multiply),
+            TSXToken::Divide => Ok(BinaryOperator::Divide),
+            TSXToken::Exponent => Ok(BinaryOperator::Exponent),
+            TSXToken::Modulo => Ok(BinaryOperator::Modulo),
+            TSXToken::Equal => Ok(BinaryOperator::Equal),
+            TSXToken::NotEqual => Ok(BinaryOperator::NotEqual),
+            TSXToken::StrictEqual => Ok(BinaryOperator::StrictEqual),
+            TSXToken::StrictNotEqual => Ok(BinaryOperator::StrictNotEqual),
+            TSXToken::LogicalOr => Ok(BinaryOperator::LogicalOr),
+            TSXToken::LogicalAnd => Ok(BinaryOperator::LogicalAnd),
+            TSXToken::OpenChevron => Ok(BinaryOperator::LessThan),
+            TSXToken::LessThanEqual => Ok(BinaryOperator::LessThanEqual),
+            TSXToken::CloseChevron => Ok(BinaryOperator::GreaterThan),
+            TSXToken::GreaterThanEqual => Ok(BinaryOperator::GreaterThanEqual),
+            TSXToken::Keyword(TSXKeyword::In) => Ok(BinaryOperator::In),
+            TSXToken::Keyword(TSXKeyword::InstanceOf) => Ok(BinaryOperator::InstanceOf),
+            TSXToken::BitwiseAnd => Ok(BinaryOperator::BitwiseAnd),
+            TSXToken::BitwiseOr => Ok(BinaryOperator::BitwiseOr),
+            TSXToken::BitwiseXOr => Ok(BinaryOperator::BitwiseXOr),
+            TSXToken::BitwiseShiftLeft => Ok(BinaryOperator::BitwiseShiftLeft),
+            TSXToken::BitwiseShiftRight => Ok(BinaryOperator::BitwiseShiftRight),
+            TSXToken::BitwiseShiftRightUnsigned => Ok(BinaryOperator::BitwiseShiftRightUnsigned),
+            TSXToken::NullishCoalescing => Ok(BinaryOperator::NullCoalescing),
+            TSXToken::DividesOperator => Ok(BinaryOperator::Divides),
+            TSXToken::ComposeOperator => Ok(BinaryOperator::Compose),
+            TSXToken::PipeOperator => Ok(BinaryOperator::Pipe),
+            _ => Err(()),
+        }
+    }
 }
 
 impl TryFrom<&TSXToken> for UnaryOperator {
-	type Error = ();
+    type Error = ();
 
-	fn try_from(expression: &TSXToken) -> Result<Self, Self::Error> {
-		match expression {
-			TSXToken::Keyword(TSXKeyword::Yield) => Ok(UnaryOperator::Yield),
-			// TODO
-			// TSXToken::Keyword(TSXKeywordToken::DelegatedYield) => Ok(UnaryOperators::DelegatedYield),
-			TSXToken::Keyword(TSXKeyword::TypeOf) => Ok(UnaryOperator::TypeOf),
-			TSXToken::Keyword(TSXKeyword::Await) => Ok(UnaryOperator::Await),
-			TSXToken::Keyword(TSXKeyword::Void) => Ok(UnaryOperator::Void),
-			TSXToken::Keyword(TSXKeyword::Delete) => Ok(UnaryOperator::Delete),
-			TSXToken::LogicalNot => Ok(UnaryOperator::LogicalNot),
-			TSXToken::BitwiseNot => Ok(UnaryOperator::BitwiseNot),
-			TSXToken::Subtract => Ok(UnaryOperator::Negation),
-			TSXToken::Add => Ok(UnaryOperator::Plus),
-			_ => Err(()),
-		}
-	}
+    fn try_from(expression: &TSXToken) -> Result<Self, Self::Error> {
+        match expression {
+            TSXToken::Keyword(TSXKeyword::Yield) => Ok(UnaryOperator::Yield),
+            // TODO
+            // TSXToken::Keyword(TSXKeywordToken::DelegatedYield) => Ok(UnaryOperators::DelegatedYield),
+            TSXToken::Keyword(TSXKeyword::TypeOf) => Ok(UnaryOperator::TypeOf),
+            TSXToken::Keyword(TSXKeyword::Await) => Ok(UnaryOperator::Await),
+            TSXToken::Keyword(TSXKeyword::Void) => Ok(UnaryOperator::Void),
+            TSXToken::Keyword(TSXKeyword::Delete) => Ok(UnaryOperator::Delete),
+            TSXToken::LogicalNot => Ok(UnaryOperator::LogicalNot),
+            TSXToken::BitwiseNot => Ok(UnaryOperator::BitwiseNot),
+            TSXToken::Subtract => Ok(UnaryOperator::Negation),
+            TSXToken::Add => Ok(UnaryOperator::Plus),
+            _ => Err(()),
+        }
+    }
 }
 
 impl TryFrom<&TSXToken> for IncrementOrDecrement {
-	type Error = ();
+    type Error = ();
 
-	fn try_from(token: &TSXToken) -> Result<Self, Self::Error> {
-		match token {
-			TSXToken::Increment => Ok(Self::Increment),
-			TSXToken::Decrement => Ok(Self::Decrement),
-			_ => Err(()),
-		}
-	}
+    fn try_from(token: &TSXToken) -> Result<Self, Self::Error> {
+        match token {
+            TSXToken::Increment => Ok(Self::Increment),
+            TSXToken::Decrement => Ok(Self::Decrement),
+            _ => Err(()),
+        }
+    }
 }
 
 impl TryFrom<&TSXToken> for UnaryPostfixAssignmentOperator {
-	type Error = ();
+    type Error = ();
 
-	fn try_from(token: &TSXToken) -> Result<Self, Self::Error> {
-		IncrementOrDecrement::try_from(token).map(Self)
-	}
+    fn try_from(token: &TSXToken) -> Result<Self, Self::Error> {
+        IncrementOrDecrement::try_from(token).map(Self)
+    }
 }
 
 impl TryFrom<&TSXToken> for UnaryPrefixAssignmentOperator {
-	type Error = ();
+    type Error = ();
 
-	fn try_from(token: &TSXToken) -> Result<Self, Self::Error> {
-		if *token == TSXToken::InvertAssign {
-			Ok(Self::Invert)
-		} else {
-			IncrementOrDecrement::try_from(token).map(Self::IncrementOrDecrement)
-		}
-	}
+    fn try_from(token: &TSXToken) -> Result<Self, Self::Error> {
+        if *token == TSXToken::InvertAssign {
+            Ok(Self::Invert)
+        } else {
+            IncrementOrDecrement::try_from(token).map(Self::IncrementOrDecrement)
+        }
+    }
 }
 
 impl BinaryOperator {
-	/// Operators which return true may or may not evaluate RHS based on their own value
-	/// TODO might be more
-	pub fn is_rhs_conditional_evaluation(&self) -> bool {
-		matches!(self, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr)
-	}
+    /// Operators which return true may or may not evaluate RHS based on their own value
+    /// TODO might be more
+    pub fn is_rhs_conditional_evaluation(&self) -> bool {
+        matches!(self, BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr)
+    }
 }
 
 // Operator precedences that aren't registered under operator trait

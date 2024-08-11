@@ -3,97 +3,105 @@ use std::error::Error;
 use proc_macro::TokenStream;
 use string_cases::StringCasesExt;
 use syn_helpers::{
-	derive_trait,
-	proc_macro2::{Ident, Span},
-	quote,
-	syn::{parse_macro_input, parse_quote, DeriveInput, Stmt, __private::quote::format_ident},
-	Constructable, FieldMut, HasAttributes, NamedOrUnnamedFieldMut, Trait, TraitItem,
+    derive_trait,
+    proc_macro2::{Ident, Span},
+    quote,
+    syn::{parse_macro_input, parse_quote, DeriveInput, Stmt, __private::quote::format_ident},
+    Constructable, FieldMut, HasAttributes, NamedOrUnnamedFieldMut, Trait, TraitItem,
 };
 
 const VISIT_SELF_NAME: &str = "visit_self";
 const VISIT_SKIP_NAME: &str = "visit_skip_field";
 const VISIT_WITH_CHAIN_NAME: &str = "visit_with_chain";
 
-#[proc_macro_derive(Visitable, attributes(visit_self, visit_skip_field, visit_custom_visit))]
+#[proc_macro_derive(
+    Visitable,
+    attributes(visit_self, visit_skip_field, visit_custom_visit)
+)]
 pub fn generate_visit_implementation(input: TokenStream) -> TokenStream {
-	let input = parse_macro_input!(input as DeriveInput);
+    let input = parse_macro_input!(input as DeriveInput);
 
-	let visit_item = TraitItem::new_method(
-		Ident::new("visit", Span::call_site()),
-		Some(vec![parse_quote!(TData)]),
-		syn_helpers::TypeOfSelf::Reference,
-		vec![
-			parse_quote!(visitors: &mut (impl crate::visiting::VisitorReceiver<TData> + ?Sized)),
-			parse_quote!(data: &mut TData),
-			parse_quote!(settings: &crate::VisitSettings),
-			parse_quote!(functions: &mut crate::ExtractedFunctions),
-			parse_quote!(chain: &mut ::temporary_annex::Annex<crate::visiting::Chain>),
-		],
-		None,
-		|item| generated_visit_item(item, VisitType::Immutable),
-	);
+    let visit_item = TraitItem::new_method(
+        Ident::new("visit", Span::call_site()),
+        Some(vec![parse_quote!(TData)]),
+        syn_helpers::TypeOfSelf::Reference,
+        vec![
+            parse_quote!(visitors: &mut (impl crate::visiting::VisitorReceiver<TData> + ?Sized)),
+            parse_quote!(data: &mut TData),
+            parse_quote!(settings: &crate::VisitSettings),
+            parse_quote!(functions: &mut crate::ExtractedFunctions),
+            parse_quote!(chain: &mut ::temporary_annex::Annex<crate::visiting::Chain>),
+        ],
+        None,
+        |item| generated_visit_item(item, VisitType::Immutable),
+    );
 
-	let visit_mut_item = TraitItem::new_method(
-		Ident::new("visit_mut", Span::call_site()),
-		Some(vec![parse_quote!(TData)]),
-		syn_helpers::TypeOfSelf::MutableReference,
-		vec![
-			parse_quote!(visitors: &mut (impl crate::visiting::VisitorMutReceiver<TData> + ?Sized)),
-			parse_quote!(data: &mut TData),
-			parse_quote!(settings: &crate::VisitSettings),
-			parse_quote!(functions: &mut crate::ExtractedFunctions),
-			parse_quote!(chain: &mut ::temporary_annex::Annex<crate::visiting::Chain>),
-		],
-		None,
-		|item| generated_visit_item(item, VisitType::Mutable),
-	);
+    let visit_mut_item = TraitItem::new_method(
+        Ident::new("visit_mut", Span::call_site()),
+        Some(vec![parse_quote!(TData)]),
+        syn_helpers::TypeOfSelf::MutableReference,
+        vec![
+            parse_quote!(visitors: &mut (impl crate::visiting::VisitorMutReceiver<TData> + ?Sized)),
+            parse_quote!(data: &mut TData),
+            parse_quote!(settings: &crate::VisitSettings),
+            parse_quote!(functions: &mut crate::ExtractedFunctions),
+            parse_quote!(chain: &mut ::temporary_annex::Annex<crate::visiting::Chain>),
+        ],
+        None,
+        |item| generated_visit_item(item, VisitType::Mutable),
+    );
 
-	let visitable_trait = Trait {
-		name: parse_quote!(crate::visiting::Visitable),
-		generic_parameters: None,
-		items: vec![visit_item, visit_mut_item],
-	};
+    let visitable_trait = Trait {
+        name: parse_quote!(crate::visiting::Visitable),
+        generic_parameters: None,
+        items: vec![visit_item, visit_mut_item],
+    };
 
-	let output = derive_trait(input, visitable_trait);
+    let output = derive_trait(input, visitable_trait);
 
-	output.into()
+    output.into()
 }
 
 #[derive(Clone, Copy)]
 enum VisitType {
-	Immutable,
-	Mutable,
+    Immutable,
+    Mutable,
 }
 
 fn generated_visit_item(
-	mut item: syn_helpers::Item,
-	visit_type: VisitType,
+    mut item: syn_helpers::Item,
+    visit_type: VisitType,
 ) -> Result<Vec<Stmt>, Box<dyn Error>> {
-	let attributes = item.structure.get_attributes();
+    let attributes = item.structure.get_attributes();
 
-	let visit_self = attributes.iter().any(|attr| attr.path.is_ident(VISIT_SELF_NAME));
+    let visit_self = attributes
+        .iter()
+        .any(|attr| attr.path.is_ident(VISIT_SELF_NAME));
 
-	let visit_with_chain = attributes
-		.iter()
-		.find_map(|attr| attr.path.is_ident(VISIT_WITH_CHAIN_NAME).then_some(&attr.tokens));
+    let visit_with_chain = attributes.iter().find_map(|attr| {
+        attr.path
+            .is_ident(VISIT_WITH_CHAIN_NAME)
+            .then_some(&attr.tokens)
+    });
 
-	let mut lines = Vec::new();
+    let mut lines = Vec::new();
 
-	if let Some(expr_tokens) = visit_with_chain {
-		lines.push(parse_quote!( let mut chain = &mut chain.push_annex(#expr_tokens); ))
-	}
+    if let Some(expr_tokens) = visit_with_chain {
+        lines.push(parse_quote!( let mut chain = &mut chain.push_annex(#expr_tokens); ))
+    }
 
-	if visit_self {
-		let struct_name_as_snake_case = &item.structure.get_name().to_string().to_snake_case();
-		let mut_postfix =
-			matches!(visit_type, VisitType::Mutable).then_some("_mut").unwrap_or_default();
-		let func_name = format_ident!("visit_{}{}", struct_name_as_snake_case, mut_postfix);
+    if visit_self {
+        let struct_name_as_snake_case = &item.structure.get_name().to_string().to_snake_case();
+        let mut_postfix = matches!(visit_type, VisitType::Mutable)
+            .then_some("_mut")
+            .unwrap_or_default();
+        let func_name = format_ident!("visit_{}{}", struct_name_as_snake_case, mut_postfix);
 
-		lines.push(parse_quote!( visitors.#func_name(self, data, functions, chain); ))
-	}
+        lines.push(parse_quote!( visitors.#func_name(self, data, functions, chain); ))
+    }
 
-	let mut field_lines = item.map_constructable(|mut constructable| {
-		Ok(constructable
+    let mut field_lines = item.map_constructable(|mut constructable| {
+        Ok(constructable
 			.get_fields_mut()
 			.fields_iterator_mut()
 			.flat_map(|mut field: NamedOrUnnamedFieldMut| -> Option<Stmt> {
@@ -126,9 +134,9 @@ fn generated_visit_item(
 				}
 			})
 			.collect::<Vec<_>>())
-	})?;
+    })?;
 
-	lines.append(&mut field_lines);
+    lines.append(&mut field_lines);
 
-	Ok(lines)
+    Ok(lines)
 }

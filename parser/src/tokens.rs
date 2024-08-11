@@ -174,9 +174,9 @@ pub enum TSXToken {
 }
 
 impl tokenizer_lib::TokenTrait for TSXToken {
-	fn is_skippable(&self) -> bool {
-		matches!(self, TSXToken::Cursor(_))
-	}
+    fn is_skippable(&self) -> bool {
+        matches!(self, TSXToken::Cursor(_))
+    }
 }
 
 impl Eq for TSXToken {}
@@ -223,15 +223,15 @@ pub enum TSXKeyword {
 }
 
 impl TSXToken {
-	pub fn is_comment(&self) -> bool {
-		matches!(self, TSXToken::Comment(_) | TSXToken::MultiLineComment(_))
-	}
+    pub fn is_comment(&self) -> bool {
+        matches!(self, TSXToken::Comment(_) | TSXToken::MultiLineComment(_))
+    }
 
-	/// Used for lexing regular expression and JSX literals differently
-	pub fn is_expression_prefix(&self) -> bool {
-		matches!(
-			self,
-			TSXToken::Keyword(TSXKeyword::Return)
+    /// Used for lexing regular expression and JSX literals differently
+    pub fn is_expression_prefix(&self) -> bool {
+        matches!(
+            self,
+            TSXToken::Keyword(TSXKeyword::Return)
                 | TSXToken::Assign
                 | TSXToken::Arrow
                 | TSXToken::OpenParentheses
@@ -241,35 +241,38 @@ impl TSXToken {
                 | TSXToken::Colon
                 // This is for match bindings
                 | TSXToken::At
-		)
-	}
+        )
+    }
 
-	/// Returns a keyword token else an identifier literal
-	pub fn from_slice(slice: &str) -> Self {
-		match TSXKeyword::from_str(slice) {
-			Ok(keyword_token) => TSXToken::Keyword(keyword_token),
-			Err(_) => TSXToken::IdentLiteral(slice.to_owned()),
-		}
-	}
+    /// Returns a keyword token else an identifier literal
+    pub fn from_slice(slice: &str) -> Self {
+        match TSXKeyword::from_str(slice) {
+            Ok(keyword_token) => TSXToken::Keyword(keyword_token),
+            Err(_) => TSXToken::IdentLiteral(slice.to_owned()),
+        }
+    }
 }
 
 /// Some tokens can be used as names for variables, methods (eg 'get' in <Map>.get()). This function
 /// takes a [Token] and returns its name as a [String] and the location as a [Span]. Will throw [ParseError] if
 /// cannot convert token to string
 pub(crate) fn token_as_identifier(
-	token: Token<TSXToken, Span>,
-	at_location: &str,
+    token: Token<TSXToken, Span>,
+    at_location: &str,
 ) -> Result<(String, Span), ParseError> {
-	let Token(token_type, position) = token;
-	let name = match token_type {
-		TSXToken::IdentLiteral(value) => value,
-		TSXToken::Keyword(keyword) => EnumVariantsStrings::to_str(&keyword).to_owned(),
-		token_type => {
-			return Err(ParseError::new(
-				crate::ParseErrors::ExpectedIdent { found: token_type, at_location },
-				position,
-			));
-		}
-	};
-	Ok((name, position))
+    let Token(token_type, position) = token;
+    let name = match token_type {
+        TSXToken::IdentLiteral(value) => value,
+        TSXToken::Keyword(keyword) => EnumVariantsStrings::to_str(&keyword).to_owned(),
+        token_type => {
+            return Err(ParseError::new(
+                crate::ParseErrors::ExpectedIdent {
+                    found: token_type,
+                    at_location,
+                },
+                position,
+            ));
+        }
+    };
+    Ok((name, position))
 }
