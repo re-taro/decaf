@@ -2,13 +2,14 @@ mod class_member;
 
 use std::{borrow::Cow, fmt::Debug};
 
+use crate::{to_string_bracketed, tsx_keywords};
 pub use class_member::*;
 use iterator_endiate::EndiateIteratorExt;
 
-use super::{ASTNode, GenericTypeConstraint, Span, TSXToken, TypeId, TypeReference, VariableId};
 use crate::{
-	extensions::decorators::Decorated, to_string_bracketed, tsx_keywords, visiting::Visitable,
-	ExpressionOrStatementPosition, Keyword, ParseResult, ParseSettings, TSXKeyword, VisitSettings,
+	extensions::decorators::Decorated, visiting::Visitable, ASTNode, ExpressionOrStatementPosition,
+	GenericTypeConstraint, Keyword, ParseResult, ParseSettings, Span, TSXKeyword, TSXToken, TypeId,
+	TypeReference, VariableId, VisitSettings,
 };
 use tokenizer_lib::{Token, TokenReader};
 

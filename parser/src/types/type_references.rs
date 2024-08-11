@@ -1,20 +1,19 @@
 use std::borrow::Cow;
 
-use crate::tsx_keywords::New;
-use crate::{
-	errors::parse_lexing_error, expressions::TemplateLiteralPart,
-	extensions::decorators::Decorated, CursorId, Decorator, Keyword, ParseResult, TypeId,
-	VariableField, VariableFieldInTypeReference, WithComment,
-};
-use crate::{parse_bracketed, to_string_bracketed};
 use derive_partial_eq_extras::PartialEqExtras;
 use iterator_endiate::EndiateIteratorExt;
 
-use super::type_declarations::GenericTypeConstraint;
+use super::{
+	interface::{parse_interface_members, InterfaceMember},
+	type_declarations::GenericTypeConstraint,
+};
 
 use crate::{
-	parse_interface_members, tokens::token_as_identifier, ASTNode, InterfaceMember,
-	NumberStructure, ParseError, ParseSettings, Span, TSXKeyword, TSXToken, Token, TokenReader,
+	errors::parse_lexing_error, expressions::TemplateLiteralPart,
+	extensions::decorators::Decorated, parse_bracketed, to_string_bracketed,
+	tokens::token_as_identifier, tsx_keywords::New, ASTNode, CursorId, Decorator, Keyword,
+	NumberStructure, ParseError, ParseResult, ParseSettings, Span, TSXKeyword, TSXToken, Token,
+	TokenReader, TypeId, VariableField, VariableFieldInTypeReference, WithComment,
 };
 
 /// A reference to a type
@@ -63,6 +62,7 @@ pub enum TypeReference {
 	ObjectLiteral(Vec<Decorated<InterfaceMember>>, TypeId, Span),
 	/// Tuple literal e.g. `[number, x: string]`
 	TupleLiteral(Vec<TupleElement>, TypeId, Span),
+	///
 	TemplateLiteral(Vec<TemplateLiteralPart<TypeReference>>, Span),
 	/// Declares type as not assignable (still has interior mutability) e.g. `readonly number`
 	Readonly(Box<TypeReference>, Span),

@@ -496,7 +496,7 @@ pub fn html_tag_is_self_closing(tag_name: &str) -> bool {
 			| "hr" | "img"
 			| "input" | "link"
 			| "meta" | "param"
-			| "source" | "track"
-			| "wbr"
+			| "source"
+			| "track" | "wbr"
 	)
 }

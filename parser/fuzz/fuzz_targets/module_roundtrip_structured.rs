@@ -4,11 +4,12 @@ mod common {
 	include!(concat!(env!("OUT_DIR"), "/common.rs")); // from build.rs
 }
 
-use boa_interner::ToInternedString;
 use decaf_parser::{ASTNode, Module, ParseOutput, SourceId, ToStringSettingsAndData};
 use libfuzzer_sys::{fuzz_target, Corpus};
 use pretty_assertions::assert_eq;
 
+/// do_fuzz will accept a valid JS string and attempt to parse it twice and compare
+/// the rendered output of both parses.
 fn do_fuzz(data: common::FuzzSource) -> Corpus {
 	let input = data.source;
 

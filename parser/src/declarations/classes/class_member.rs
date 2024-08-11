@@ -1,14 +1,15 @@
 use std::{borrow::Cow, fmt::Debug};
 
+use crate::tsx_keywords;
 use source_map::Span;
 use tokenizer_lib::{Token, TokenReader};
 
 use crate::{
 	extractor::{ExtractedFunction, GetFunction},
 	functions::FunctionBased,
-	tsx_keywords, ASTNode, Block, ChainVariable, Expression, FunctionBase, GetSetGeneratorOrNone,
-	Keyword, ParseError, ParseErrors, ParseResult, ParseSettings, PropertyKey, TSXKeyword,
-	TSXToken, TypeReference, VariableId, VisitSettings, WithComment,
+	ASTNode, Block, ChainVariable, Expression, FunctionBase, GetSetGeneratorOrNone, Keyword,
+	ParseError, ParseErrors, ParseResult, ParseSettings, PropertyKey, TSXKeyword, TSXToken,
+	TypeReference, VariableId, VisitSettings, WithComment,
 };
 
 /// The variable id's of these is handled by their [PropertyKey]

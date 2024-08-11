@@ -2,6 +2,11 @@ use proc_macro::{token_stream, Delimiter, Spacing, TokenStream, TokenTree};
 use proc_macro2::Span;
 use quote::{format_ident, quote};
 
+/// Used for generating parser::ASTNodes using proc macros
+///
+/// Turns token stream into string.
+/// - Finds expressions and registers cursor locations
+/// - Parses structure from string and turns it into Rust tokens
 #[proc_macro]
 pub fn expr(item: TokenStream) -> TokenStream {
 	token_stream_to_ast_node::<parser::Expression>(item)
@@ -35,6 +40,8 @@ fn token_stream_to_ast_node<T: parser::ASTNode + self_rust_tokenize::SelfRustTok
 		})
 		.collect();
 
+	// dbg!(&cursors, &string);
+
 	let parser::ParseOutput(node, _) = T::from_string(
 		string,
 		parser::ParseSettings::default(),
@@ -62,6 +69,8 @@ fn token_stream_to_ast_node<T: parser::ASTNode + self_rust_tokenize::SelfRustTok
 			#node_as_tokens
 		}
 	};
+
+	// eprintln!("{tokens}");
 
 	tokens.into()
 }

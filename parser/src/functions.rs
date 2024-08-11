@@ -6,11 +6,11 @@ use std::{
 };
 
 use crate::{
-	extractor::ExtractedFunctions, parse_bracketed, to_string_bracketed, tsx_keywords, ASTNode,
-	Block, ChainVariable, ExpressionOrStatementPosition, ExpressionPosition, FunctionParameters,
-	GenericTypeConstraint, Keyword, ParseResult, ParseSettings, TSXKeyword, TSXToken,
-	TypeReference, VisitSettings, Visitable,
+	extractor::ExtractedFunctions, parameters::*, parse_bracketed, to_string_bracketed, ASTNode,
+	Block, ChainVariable, ExpressionOrStatementPosition, ExpressionPosition, GenericTypeConstraint,
+	Keyword, ParseResult, ParseSettings, TSXToken, TypeReference, VisitSettings, Visitable,
 };
+use crate::{tsx_keywords, TSXKeyword};
 use derive_debug_extras::DebugExtras;
 use derive_partial_eq_extras::PartialEqExtras;
 use source_map::{Span, ToString};
@@ -18,13 +18,13 @@ use tokenizer_lib::{Token, TokenReader};
 
 pub mod bases {
 	pub use crate::{
+		declarations::{
+			classes::{ClassConstructorBase, ClassFunctionBase},
+			StatementFunctionBase,
+		},
 		expressions::{
 			arrow_function::ArrowFunctionBase, object_literal::ObjectLiteralMethodBase,
 			ExpressionFunctionBase,
-		},
-		statements::{
-			classes::{ClassConstructorBase, ClassFunctionBase},
-			StatementFunctionBase,
 		},
 	};
 }

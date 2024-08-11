@@ -3,18 +3,18 @@ use decaf_parser::{ASTNode, Module, ParseOutput, SourceId, ToStringSettingsAndDa
 #[test]
 fn statements() {
 	let input = r#"
-import x from "./a.js";
+import x from "./h.js";
 if (true) {
     console.log("hi")
 }
 for (const x in [4, 2]) {
     switch (x) {
         case 4:
-            doThing()
+            doThing();
         case 2:
-            break
+            break;
         default:
-            break
+            break;
     }
 }
 for (let i = 0; i < 4; i++) {

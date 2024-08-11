@@ -1,10 +1,9 @@
 #![no_main]
 
-use std::str;
-
 use decaf_parser::{ASTNode, Module, ParseOutput, SourceId, ToStringSettingsAndData};
 use libfuzzer_sys::{fuzz_target, Corpus};
 use pretty_assertions::assert_eq;
+use std::str;
 
 /// `do_fuzz` will take an arbitrary string, parse once and see if it returned a valid AST
 /// then it will print and parse that AST a second time and compare the printed outputs.
