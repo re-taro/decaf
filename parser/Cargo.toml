@@ -32,12 +32,12 @@ self-rust-tokenize = { version = "0.3.3", optional = true }
 [target.'cfg(target_family = "wasm")'.dependencies]
 tokenizer-lib = { version = "1.5.0", features = [
   "buffered",
-], default_features = false }
+], default-features = false }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokenizer-lib = { version = "1.5.0", features = [
   "parallel",
-], default_features = false }
+], default-features = false }
 
 [dev-dependencies]
 match_deref = "0.1.1"
