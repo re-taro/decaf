@@ -11,7 +11,9 @@
   "scripts": {
     "clean": "rm decaf.* && rm decaf_bg.*",
     "build": "cargo build --lib --target wasm32-unknown-unknown && npm run bind",
-    "bind": "wasm-bindgen --out-dir . --target nodejs ../../target/wasm32-unknown-unknown/debug/decaf.wasm"
+    "bind": "wasm-bindgen --out-dir . --target nodejs ../../target/wasm32-unknown-unknown/debug/decaf_lib.wasm",
+    "build-release": "cargo build --lib --release --target wasm32-unknown-unknown && npm run bind-release",
+    "bind-release": "wasm-bindgen --out-dir . --target nodejs ../../target/wasm32-unknown-unknown/release/decaf_lib.wasm"
   },
   "bin": {
     "decaf": "./cli.cjs"
