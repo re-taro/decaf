@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::{tsx_keywords::Is, TSXKeyword, TSXToken};
 use iterator_endiate::EndiateIteratorExt;
 use source_map::Span;
 use tokenizer_lib::TokenReader;
@@ -8,8 +9,7 @@ use visitable_derive::Visitable;
 use crate::{
     errors::parse_lexing_error,
     expressions::{ExpressionId, ExpressionOrBlock, MultipleExpression},
-    tsx_keywords::Is,
-    ASTNode, Keyword, TSXKeyword, TSXToken, TypeReference,
+    ASTNode, Keyword, TypeReference,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Visitable)]
@@ -49,7 +49,7 @@ impl ASTNode for IsExpression {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push_str("is (");

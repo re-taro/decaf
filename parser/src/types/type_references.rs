@@ -1,5 +1,12 @@
 use std::borrow::Cow;
 
+use crate::tsx_keywords::New;
+use crate::{
+    errors::parse_lexing_error, expressions::TemplateLiteralPart,
+    extensions::decorators::Decorated, CursorId, Decorator, Keyword, ParseResult, TypeId,
+    VariableField, VariableFieldInTypeReference, WithComment,
+};
+use crate::{parse_bracketed, to_string_bracketed};
 use derive_partial_eq_extras::PartialEqExtras;
 use iterator_endiate::EndiateIteratorExt;
 
@@ -9,11 +16,8 @@ use super::{
 };
 
 use crate::{
-    errors::parse_lexing_error, expressions::TemplateLiteralPart,
-    extensions::decorators::Decorated, parse_bracketed, to_string_bracketed,
-    tokens::token_as_identifier, tsx_keywords::New, ASTNode, CursorId, Decorator, Keyword,
-    NumberStructure, ParseError, ParseResult, ParseSettings, Span, TSXKeyword, TSXToken, Token,
-    TokenReader, TypeId, VariableField, VariableFieldInTypeReference, WithComment,
+    tokens::token_as_identifier, ASTNode, NumberStructure, ParseError, ParseSettings, Span,
+    TSXKeyword, TSXToken, Token, TokenReader,
 };
 
 /// A reference to a type
@@ -125,7 +129,7 @@ impl TypeCondition {
     pub(crate) fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
@@ -195,7 +199,7 @@ impl ASTNode for TypeConditionResult {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
@@ -222,12 +226,12 @@ impl ASTNode for TypeReference {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
             Self::Cursor(..) => {
-                if !settings.0.expect_cursors {
+                if !settings.expect_cursors {
                     panic!()
                 }
             }
@@ -868,7 +872,7 @@ impl ASTNode for TypeReferenceFunctionParameters {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         for parameter in self.parameters.iter() {

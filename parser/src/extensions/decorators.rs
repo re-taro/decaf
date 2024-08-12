@@ -6,8 +6,8 @@ use tokenizer_lib::{Token, TokenReader};
 use visitable_derive::Visitable;
 
 use crate::{
-    extractor::ExtractedFunctions, tokens::token_as_identifier, ASTNode, Expression, ParseResult,
-    ParseSettings, TSXToken, Visitable,
+    tokens::token_as_identifier, ASTNode, Expression, ParseResult, ParseSettings, TSXToken,
+    Visitable,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Visitable)]
@@ -38,10 +38,10 @@ impl ASTNode for Decorator {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
-        if settings.0.include_decorators {
+        if settings.include_decorators {
             buf.push('@');
             buf.push_str(self.name.as_str());
             if let Some(arguments) = &self.arguments {
@@ -50,7 +50,7 @@ impl ASTNode for Decorator {
                     argument.to_string_from_buffer(buf, settings, depth);
                     if !at_end {
                         buf.push(',');
-                        settings.0.add_gap(buf);
+                        settings.add_gap(buf);
                     }
                 }
                 buf.push(')');
@@ -125,7 +125,7 @@ impl<N: ASTNode> ASTNode for Decorated<N> {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         self.to_string_from_buffer_just_decorators(buf, settings, depth);
@@ -144,13 +144,13 @@ impl<U> Decorated<U> {
     pub(crate) fn to_string_from_buffer_just_decorators<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
-        if settings.0.include_decorators {
+        if settings.include_decorators {
             for decorator in self.decorators.iter() {
                 decorator.to_string_from_buffer(buf, settings, depth);
-                if settings.0.pretty {
+                if settings.pretty {
                     buf.push_new_line();
                 } else {
                     buf.push(' ');
@@ -178,10 +178,10 @@ impl<T: Visitable> Visitable for Decorated<T> {
         visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
         data: &mut TData,
         settings: &crate::VisitSettings,
-        functions: &mut ExtractedFunctions,
+
         chain: &mut temporary_annex::Annex<crate::Chain>,
     ) {
-        self.on.visit(visitors, data, settings, functions, chain);
+        self.on.visit(visitors, data, settings, chain);
     }
 
     fn visit_mut<TData>(
@@ -189,10 +189,9 @@ impl<T: Visitable> Visitable for Decorated<T> {
         visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
         data: &mut TData,
         settings: &crate::VisitSettings,
-        functions: &mut ExtractedFunctions,
+
         chain: &mut temporary_annex::Annex<crate::Chain>,
     ) {
-        self.on
-            .visit_mut(visitors, data, settings, functions, chain);
+        self.on.visit_mut(visitors, data, settings, chain);
     }
 }

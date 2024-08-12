@@ -95,22 +95,22 @@ impl ASTNode for IfStatement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push_str("if");
-        settings.0.add_gap(buf);
+        settings.add_gap(buf);
         buf.push('(');
         self.condition.to_string_from_buffer(buf, settings, depth);
         buf.push(')');
-        settings.0.add_gap(buf);
+        settings.add_gap(buf);
         self.inner.to_string_from_buffer(buf, settings, depth + 1);
         for else_statement in self.else_conditions.iter() {
-            settings.0.add_gap(buf);
+            settings.add_gap(buf);
             else_statement.to_string_from_buffer(buf, settings, depth);
         }
         if let Some(else_statement) = &self.trailing_else {
-            settings.0.add_gap(buf);
+            settings.add_gap(buf);
             else_statement.to_string_from_buffer(buf, settings, depth);
         }
     }
@@ -133,15 +133,15 @@ impl ASTNode for ConditionalElseStatement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push_str("else if");
-        settings.0.add_gap(buf);
+        settings.add_gap(buf);
         buf.push('(');
         self.condition.to_string_from_buffer(buf, settings, depth);
         buf.push(')');
-        settings.0.add_gap(buf);
+        settings.add_gap(buf);
         self.inner.to_string_from_buffer(buf, settings, depth + 1);
     }
 }
@@ -183,11 +183,11 @@ impl ASTNode for UnconditionalElseStatement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push_str("else");
-        settings.0.add_gap(buf);
+        settings.add_gap(buf);
         self.inner.to_string_from_buffer(buf, settings, depth + 1);
     }
 }

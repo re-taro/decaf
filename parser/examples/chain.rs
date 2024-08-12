@@ -1,10 +1,9 @@
 use decaf_parser::{
-    extractor::ExtractedFunctions, ASTNode, Chain, Expression, ParseOutput, SourceId,
-    VisitSettings, Visitable, Visitor, Visitors,
+    ASTNode, Chain, Expression, SourceId, VisitSettings, Visitable, Visitor, Visitors,
 };
 use temporary_annex::Annex;
 
-fn parse<T: ASTNode>(s: &str) -> ParseOutput<T> {
+fn parse<T: ASTNode>(s: &str) -> T {
     T::from_string(
         s.to_owned(),
         Default::default(),
@@ -18,13 +17,7 @@ fn parse<T: ASTNode>(s: &str) -> ParseOutput<T> {
 struct ShowChain;
 
 impl Visitor<Expression, ()> for ShowChain {
-    fn visit(
-        &mut self,
-        item: &Expression,
-        _data: &mut (),
-        _: &mut ExtractedFunctions,
-        chain: &Chain,
-    ) {
+    fn visit(&mut self, item: &Expression, _data: &mut (), chain: &Chain) {
         if matches!(item, Expression::VariableReference(name, _, _) if name == "chain") {
             eprintln!("{:#?}", chain);
         }
@@ -32,7 +25,7 @@ impl Visitor<Expression, ()> for ShowChain {
 }
 
 fn main() {
-    let ParseOutput(expr, mut state) = parse::<Expression>("3 && (4 && chain) && 2 == chain");
+    let expr = parse::<Expression>("3 && (4 && chain) && 2 == chain");
 
     expr.visit(
         &mut Visitors {
@@ -41,7 +34,6 @@ fn main() {
         },
         &mut (),
         &VisitSettings::default(),
-        &mut state.function_extractor,
         &mut Annex::new(&mut Chain::new()),
     );
 }
