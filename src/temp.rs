@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use parser::{
     expressions::ExpressionId, source_map::MapFileStore, ASTNode, ParseSettings, SourceId,
@@ -10,7 +10,7 @@ use crate::error_handling::{self, TempDiagnostic};
 #[cfg_attr(target_family = "wasm", derive(serde::Serialize))]
 pub struct Output {
     #[allow(dead_code)]
-    pub output_path: String,
+    pub output_path: PathBuf,
     pub content: String,
     #[allow(dead_code)]
     pub mappings: String,
@@ -24,13 +24,15 @@ pub struct BuildOutput {
 
 /// Just builds one file temporarily
 pub fn build<T: crate::FSResolver>(
-    _fs_resolver: T,
-    content: String,
-    input_path: String,
-    output_path: String,
+    fs_resolver: T,
+    input_path: &Path,
+    output_path: &Path,
 ) -> (MapFileStore, Result<BuildOutput, Vec<TempDiagnostic>>) {
     let mut fs = MapFileStore::default();
+
+    let (content, _cursors) = fs_resolver(input_path).expect("Could not find/get file");
     let source_id = SourceId::new(&mut fs, PathBuf::from(input_path), content.clone());
+
     let module_result = parser::Module::from_string(
         content,
         ParseSettings::default(),
@@ -71,7 +73,7 @@ pub fn build<T: crate::FSResolver>(
     );
 
     let output = Output {
-        output_path,
+        output_path: output_path.to_path_buf(),
         content,
         mappings: source_map.mappings,
     };

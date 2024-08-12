@@ -127,6 +127,10 @@ jobs:
         uses: re-taro/actions/setup-node@v3.6.0
         with:
           node-version: latest
+      - name: Setup | Deno
+        uses: denoland/setup-deno@v1.3.0
+        with:
+          deno-version: v1.x
       - name: Setup | Cache
         uses: Swatinem/rust-cache@v2.7.3
       - name: Setup | wasm-bindgen-cli
@@ -139,7 +143,16 @@ jobs:
           pnpm run build
         working-directory: js-cli-and-library
         shell: bash
-      - name: Build | Test
-        run: node test.mjs
+      - name: Build | Test modules
+        run: |
+          node test.js
+          deno run -A test.js
+          node test.cjs
+        working-directory: js-cli-and-library
+        shell: bash
+      - name: Build | Check CLI works
+        run: |
+          node .\dist\cli.cjs info
+          deno run -A .\dist\cli.mjs info
         working-directory: js-cli-and-library
         shell: bash

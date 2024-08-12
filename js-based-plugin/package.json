@@ -1,44 +1,44 @@
 {
-  "name": "unplugin-decaf",
-  "type": "module",
-  "version": "0.0.0",
-  "packageManager": "pnpm@9.7.0",
-  "description": "decaf as a plugin",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
-  "license": "UNLICENSED",
-  "exports": {
-    ".": {
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.mjs"
-    }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/re-taro/decaf.git",
-    "directory": "js-based-plugin"
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "unbuild"
-  },
-  "build": {
-    "entries": [
-      {
-        "builder": "rollup",
-        "input": "./index"
-      }
-    ],
-    "rollup": {
-      "emitCJS": true,
-      "commonjs": true
-    }
-  },
-  "dependencies": {
-    "decaf": "workspace:*",
-    "unplugin": "1.3.1"
-  },
-  "author": "Rintaro Itokawa <me@re-taro.dev> (https://re-taro.dev)"
+	"name": "unplugin-decaf",
+	"type": "module",
+	"version": "0.0.0",
+	"packageManager": "pnpm@9.7.0",
+	"description": "decaf as a plugin",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"license": "UNLICENSED",
+	"exports": {
+		".": {
+			"require": "./dist/index.cjs",
+			"import": "./dist/index.mjs"
+		}
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/re-taro/decaf.git",
+		"directory": "js-based-plugin"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "unbuild"
+	},
+	"build": {
+		"entries": [
+			{
+				"builder": "rollup",
+				"input": "./index"
+			}
+		],
+		"rollup": {
+			"emitCJS": true,
+			"commonjs": true
+		}
+	},
+	"dependencies": {
+		"decaf": "workspace:*",
+		"unplugin": "1.3.1"
+	},
+	"author": "Rintaro Itokawa <me@re-taro.dev> (https://re-taro.dev)"
 }
