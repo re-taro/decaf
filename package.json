@@ -1,0 +1,16 @@
+{
+  "name": "decaf-workspace",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.7.0",
+  "author": "Rintaro Itokawa <me@re-taro.dev> (https://re-taro.dev)",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/re-taro/decaf.git"
+  },
+  "devDependencies": {
+    "unbuild": "2.0.0"
+  }
+}
