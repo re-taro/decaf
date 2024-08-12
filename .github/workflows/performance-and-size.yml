@@ -1,0 +1,41 @@
+name: Performance and size
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings"
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  hyperfine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Setup | Install hyperfine
+        run: cargo install hyperfine
+      - name: Build decaf
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: true
+      - name: Run hyperfine
+        run: |
+          curl -O https://gist.githubusercontent.com/re-taro/d51e66d4dca52d4a82d9fc5ab903efa6/raw/9deaab38fb294d7d3788351a15dbf46b4cb8c6bc/example.js
+          hyperfine './target/release/decaf build example.js'
+      - name: Print (linux) binary size
+        run: |
+          echo "Binary is $(stat -c %s ./target/release/decaf) bytes"
