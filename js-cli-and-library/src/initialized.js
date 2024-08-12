@@ -1,4 +1,4 @@
-import { initSync, build } from "./index.mjs";
+import { initSync, build } from "./index.js";
 import { readFileSync } from "node:fs";
 
 const wasmPath = new URL("./shared/decaf_lib_bg.wasm", import.meta.url);
