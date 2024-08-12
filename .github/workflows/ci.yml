@@ -116,3 +116,30 @@ jobs:
           cargo fuzz run -s none module_roundtrip_naive -- -timeout=10 -max_total_time=120 -use_value_profile=1 || true
           cargo fuzz run -s none module_roundtrip_structured -- -timeout=10 -max_total_time=120 -use_value_profile=1 || true
         working-directory: parser/fuzz
+  wasm-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@nightly
+      - name: Setup | Node.js
+        uses: re-taro/actions/setup-node@v3.6.0
+        with:
+          node-version: latest
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Setup | wasm-bindgen-cli
+        uses: brndnmtthws/rust-action-cargo-binstall@v1.1.0
+        with:
+          packages: wasm-bindgen-cli
+      - name: Build | wasm32-unknown-unknown
+        run: |
+          rustup target add wasm32-unknown-unknown
+          pnpm run build
+        working-directory: js-cli-and-library
+        shell: bash
+      - name: Build | Test
+        run: node test.mjs
+        working-directory: js-cli-and-library
+        shell: bash
