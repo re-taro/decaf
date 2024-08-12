@@ -44,7 +44,7 @@ impl ASTNode for JSXFragment {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push_str("<>");
@@ -87,7 +87,7 @@ impl ASTNode for JSXRoot {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
@@ -141,7 +141,7 @@ fn parse_jsx_children(
 fn jsx_children_to_string<T: source_map::ToString>(
     children: &[JSXNode],
     buf: &mut T,
-    settings: &crate::ToStringSettingsAndData,
+    settings: &crate::ToStringSettings,
     depth: u8,
 ) {
     for node in children.iter() {
@@ -151,8 +151,8 @@ fn jsx_children_to_string<T: source_map::ToString>(
         node.to_string_from_buffer(buf, settings, depth);
     }
 
-    if settings.0.pretty && depth > 0 && matches!(children.last(), Some(JSXNode::LineBreak)) {
-        settings.0.add_indent(depth, buf);
+    if settings.pretty && depth > 0 && matches!(children.last(), Some(JSXNode::LineBreak)) {
+        settings.add_indent(depth, buf);
     }
 }
 
@@ -224,13 +224,13 @@ impl ASTNode for JSXNode {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
             JSXNode::Element(element) => element.to_string_from_buffer(buf, settings, depth + 1),
             JSXNode::InterpolatedExpression(expression, _) => {
-                if !settings.0.should_add_comment()
+                if !settings.should_add_comment()
                     && matches!(&**expression, Expression::Comment(..))
                 {
                     return;
@@ -241,7 +241,7 @@ impl ASTNode for JSXNode {
             }
             JSXNode::TextNode(text, _) => buf.push_str(text),
             JSXNode::LineBreak => {
-                if settings.0.pretty {
+                if settings.pretty {
                     buf.push_new_line();
                 }
             }
@@ -312,7 +312,7 @@ impl ASTNode for JSXElement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push('<');
@@ -367,7 +367,7 @@ impl ASTNode for JSXAttribute {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {

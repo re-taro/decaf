@@ -15,7 +15,7 @@ use argh::FromArgs;
 // 	TypeDefinitionModulePath,
 // };
 
-/// Ezno Compiler
+/// decaf Compiler
 #[derive(FromArgs, Debug)]
 struct TopLevel {
     #[argh(subcommand)]
@@ -35,7 +35,7 @@ enum CompilerSubCommand {
     // Pack(Pack),
 }
 
-/// Display Ezno information
+/// Display decaf information
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "info")]
 struct Info {}

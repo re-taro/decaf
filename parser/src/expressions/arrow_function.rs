@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
+use crate::{tsx_keywords, VariableIdentifier};
 use visitable_derive::Visitable;
 
 use crate::{
     errors::parse_lexing_error, functions::FunctionBased, parameters::FunctionParameters,
-    tokens::token_as_identifier, tsx_keywords, ASTNode, Block, BlockId, ChainVariable, Expression,
-    FunctionBase, FunctionId, Keyword, Parameter, ParseResult, ParseSettings, Span, TSXKeyword,
-    TSXToken, Token, TokenReader, TypeReference, VariableField, VariableId, VariableIdentifier,
-    WithComment,
+    tokens::token_as_identifier, ASTNode, Block, BlockId, ChainVariable, Expression, FunctionBase,
+    FunctionId, Keyword, Parameter, ParseResult, ParseSettings, Span, TSXKeyword, TSXToken, Token,
+    TokenReader, TypeReference, VariableField, VariableId, WithComment,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -42,7 +42,7 @@ impl FunctionBased for ArrowFunctionBase {
         buf: &mut T,
         is_async: &Self::Header,
         _name: &Self::Name,
-        _settings: &crate::ToStringSettingsAndData,
+        _settings: &crate::ToStringSettings,
         _depth: u8,
     ) {
         if is_async.is_some() {
@@ -84,7 +84,7 @@ impl FunctionBased for ArrowFunctionBase {
     fn parameters_to_string_from_buffer<T: source_map::ToString>(
         buf: &mut T,
         parameters: &FunctionParameters,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         // Use shorthand if one parameter with no declared type
@@ -104,9 +104,9 @@ impl FunctionBased for ArrowFunctionBase {
 
     fn parameter_body_boundary_token_to_string_from_buffer<T: source_map::ToString>(
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
     ) {
-        buf.push_str(if settings.0.pretty { " => " } else { "=>" });
+        buf.push_str(if settings.pretty { " => " } else { "=>" });
     }
 
     fn header_left(header: &Self::Header) -> Option<Cow<Span>> {
@@ -225,7 +225,7 @@ impl ASTNode for ExpressionOrBlock {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {

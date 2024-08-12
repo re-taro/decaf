@@ -1,14 +1,12 @@
 use std::borrow::Cow;
 
+use crate::{TSXKeyword, TSXToken};
 use iterator_endiate::EndiateIteratorExt;
 use source_map::Span;
 use tokenizer_lib::Token;
 use visitable_derive::Visitable;
 
-use crate::{
-    errors::parse_lexing_error, tokens::token_as_identifier, ASTNode, Expression, TSXKeyword,
-    TSXToken,
-};
+use crate::{errors::parse_lexing_error, tokens::token_as_identifier, ASTNode, Expression};
 
 #[derive(Debug, Clone, PartialEq, Eq, Visitable)]
 #[cfg_attr(
@@ -64,7 +62,7 @@ impl ASTNode for EnumDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         if self.is_constant {
@@ -72,19 +70,19 @@ impl ASTNode for EnumDeclaration {
         }
         buf.push_str("enum ");
         buf.push_str(&self.name);
-        settings.0.add_gap(buf);
+        settings.add_gap(buf);
         buf.push_str("{");
         for (at_end, member) in self.members.iter().endiate() {
-            if settings.0.pretty {
+            if settings.pretty {
                 buf.push_new_line();
-                settings.0.add_indent(depth + 1, buf);
+                settings.add_indent(depth + 1, buf);
             }
             member.to_string_from_buffer(buf, settings, depth);
-            if !settings.0.pretty && !at_end {
+            if !settings.pretty && !at_end {
                 buf.push(',');
             }
         }
-        if settings.0.pretty && !self.members.is_empty() {
+        if settings.pretty && !self.members.is_empty() {
             buf.push_new_line();
         }
         buf.push('}');
@@ -141,14 +139,14 @@ impl ASTNode for EnumMember {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
             EnumMember::Variant { name, value, .. } => {
                 buf.push_str(name);
                 if let Some(value) = value {
-                    buf.push_str(if settings.0.pretty { " = " } else { "=" });
+                    buf.push_str(if settings.pretty { " = " } else { "=" });
                     value.to_string_from_buffer(buf, settings, depth);
                 }
             }

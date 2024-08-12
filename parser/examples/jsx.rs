@@ -1,8 +1,8 @@
-use decaf_parser::{ASTNode, JSXRoot, ParseOutput, SourceId, ToStringSettingsAndData};
+use decaf_parser::{ASTNode, JSXRoot, SourceId, ToStringSettings};
 
 fn main() {
-    let source = "<Layout> <p>My page content, wrapped in a layout!</p> </Layout>";
-    let ParseOutput(result, state) = JSXRoot::from_string(
+    let source = "<MySiteLayout> <p>My page content, wrapped in a layout!</p> </MySiteLayout>";
+    let result = JSXRoot::from_string(
         source.to_owned(),
         Default::default(),
         SourceId::NULL,
@@ -11,11 +11,5 @@ fn main() {
     )
     .unwrap();
 
-    println!(
-        "{}",
-        result.to_string(&ToStringSettingsAndData(
-            Default::default(),
-            state.function_extractor
-        ))
-    );
+    println!("{}", result.to_string(&ToStringSettings::default()));
 }

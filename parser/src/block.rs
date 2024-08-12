@@ -11,8 +11,7 @@ use visitable_derive::Visitable;
 
 use super::{ASTNode, Span, TSXToken, TokenReader};
 use crate::{
-    expect_semi_colon, extractor::ExtractedFunctions, Declaration, ParseResult, ParseSettings,
-    Statement, VisitSettings, Visitable,
+    expect_semi_colon, Declaration, ParseResult, ParseSettings, Statement, VisitSettings, Visitable,
 };
 
 static BLOCK_ID_COUNTER: AtomicU16 = AtomicU16::new(0);
@@ -80,11 +79,7 @@ impl ASTNode for StatementOrDeclaration {
     ) -> ParseResult<Self> {
         if Declaration::is_declaration_start(reader) {
             let dec = Declaration::from_reader(reader, state, settings)?;
-            // Register hoisted functions here
             // TODO nested blocks? Interfaces...?
-            // if let Statement::ExtractedFunction(func) = &value {
-            // 	state.hoisted_functions.entry(block_id).or_default().push(func.0);
-            // }
             Ok(StatementOrDeclaration::Declaration(dec))
         } else {
             let stmt = Statement::from_reader(reader, state, settings)?;
@@ -95,7 +90,7 @@ impl ASTNode for StatementOrDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
@@ -168,19 +163,19 @@ impl ASTNode for Block {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         buf.push('{');
-        if depth > 0 && settings.0.pretty {
+        if depth > 0 && settings.pretty {
             buf.push_new_line();
         }
         statements_and_declarations_to_string(&self.0, buf, settings, depth);
-        if settings.0.pretty {
+        if settings.pretty {
             buf.push_new_line();
         }
         if depth > 1 {
-            settings.0.add_indent(depth - 1, buf);
+            settings.add_indent(depth - 1, buf);
         }
         buf.push('}');
     }
@@ -206,7 +201,7 @@ impl Visitable for Block {
         visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
         data: &mut TData,
         settings: &VisitSettings,
-        functions: &mut ExtractedFunctions,
+
         chain: &mut temporary_annex::Annex<crate::visiting::Chain>,
     ) {
         {
@@ -216,16 +211,15 @@ impl Visitable for Block {
                     items: &self.0,
                 },
                 data,
-                functions,
                 chain,
             );
         }
         let iter = self.iter();
         if settings.reverse_statements {
             iter.rev()
-                .for_each(|item| item.visit(visitors, data, settings, functions, chain));
+                .for_each(|item| item.visit(visitors, data, settings, chain));
         } else {
-            iter.for_each(|item| item.visit(visitors, data, settings, functions, chain));
+            iter.for_each(|item| item.visit(visitors, data, settings, chain));
         }
     }
 
@@ -234,7 +228,7 @@ impl Visitable for Block {
         visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
         data: &mut TData,
         settings: &VisitSettings,
-        functions: &mut ExtractedFunctions,
+
         chain: &mut temporary_annex::Annex<crate::visiting::Chain>,
     ) {
         {
@@ -244,19 +238,16 @@ impl Visitable for Block {
                     items: &mut self.0,
                 },
                 data,
-                functions,
                 chain,
             );
         }
         let iter_mut = self.iter_mut();
         if settings.reverse_statements {
-            iter_mut.for_each(|statement| {
-                statement.visit_mut(visitors, data, settings, functions, chain)
-            });
+            iter_mut.for_each(|statement| statement.visit_mut(visitors, data, settings, chain));
         } else {
-            iter_mut.rev().for_each(|statement| {
-                statement.visit_mut(visitors, data, settings, functions, chain)
-            });
+            iter_mut
+                .rev()
+                .for_each(|statement| statement.visit_mut(visitors, data, settings, chain));
         }
     }
 }
@@ -300,7 +291,7 @@ impl ASTNode for BlockOrSingleStatement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettingsAndData,
+        settings: &crate::ToStringSettings,
         depth: u8,
     ) {
         match self {
@@ -308,9 +299,9 @@ impl ASTNode for BlockOrSingleStatement {
                 block.to_string_from_buffer(buf, settings, depth)
             }
             BlockOrSingleStatement::SingleStatement(stmt) => {
-                if settings.0.pretty {
+                if settings.pretty {
                     buf.push_new_line();
-                    settings.0.add_gap(buf);
+                    settings.add_gap(buf);
                     stmt.to_string_from_buffer(buf, settings, depth);
                 } else {
                     buf.push('{');
@@ -347,18 +338,18 @@ pub(crate) fn parse_statements_and_declarations(
 pub fn statements_and_declarations_to_string<T: source_map::ToString>(
     items: &[StatementOrDeclaration],
     buf: &mut T,
-    settings: &crate::ToStringSettingsAndData,
+    settings: &crate::ToStringSettings,
     depth: u8,
 ) {
     for (at_end, item) in items.iter().endiate() {
-        settings.0.add_indent(depth, buf);
+        settings.add_indent(depth, buf);
         item.to_string_from_buffer(buf, settings, depth);
         if !at_end {
             // TODO only append new line if something added
             if item.requires_semi_colon() {
                 buf.push(';');
             }
-            if settings.0.pretty {
+            if settings.pretty {
                 buf.push_new_line();
             }
         }
