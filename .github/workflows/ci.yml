@@ -47,10 +47,7 @@ jobs:
         run: taplo fmt --check **/*/Cargo.toml
   clippy:
     name: Clippy [Linter]
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
@@ -62,6 +59,9 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.3
       - name: Build | Lint
         uses: giraffate/clippy-action@94e9bd8deab2618756ec5380f12eb35bcb0a88ca
+        with:
+          reporter: github-pr-review
+          github_token: ${{ secrets.GITHUB_TOKEN }}
   cargo_check:
     name: Compile
     runs-on: ubuntu-latest
