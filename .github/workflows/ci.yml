@@ -155,7 +155,7 @@ jobs:
       - name: Build | Run fuzzing
         if: steps.changes.outputs.parser == 'true'
         run: |
-          rustup target add x86_64-unknown-linux-musl
+          rustup target add x86_64-unknown-linux-gnu
           cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -max_total_time=120 -use_value_profile=1
         working-directory: parser/fuzz
   wasm-build:
