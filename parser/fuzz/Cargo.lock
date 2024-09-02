@@ -209,6 +209,7 @@ dependencies = [
 name = "decaf-parser-fuzz"
 version = "0.0.0"
 dependencies = [
+ "arbitrary",
  "boa_ast",
  "boa_interner",
  "decaf-parser",
