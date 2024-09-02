@@ -149,13 +149,10 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.3
       - name: Setup | cargo-fuzz
         if: steps.changes.outputs.parser == 'true'
-        uses: taiki-e/install-action@v2.42.37
-        with:
-          tool: cargo-fuzz
+        run: cargo install cargo-fuzz
       - name: Build | Run fuzzing
         if: steps.changes.outputs.parser == 'true'
         run: |
-          rustup target add x86_64-unknown-linux-gnu
           cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -max_total_time=120 -use_value_profile=1
         working-directory: parser/fuzz
   wasm-build:
@@ -176,9 +173,7 @@ jobs:
       - name: Setup | Cache
         uses: Swatinem/rust-cache@v2.7.3
       - name: Setup | wasm-bindgen-cli
-        uses: taiki-e/install-action@v2.42.37
-        with:
-          tool: wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
       - name: Build | wasm32-unknown-unknown
         run: |
           rustup target add wasm32-unknown-unknown
