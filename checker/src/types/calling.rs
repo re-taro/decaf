@@ -1,14 +1,12 @@
 use source_map::Span;
 
 use crate::{
-    context::{Environment, PolyBase},
+    context::{Environment, FunctionId, PolyBase},
     errors::TypeCheckError,
     events::{CalledWithNew, Event, FunctionCallResult},
-    structures::{
-        functions::{FunctionType, SynthesizedArgument},
-        parameters::{SynthesizedParameter, SynthesizedParameters},
-    },
-    types::Type,
+    structures::functions::SynthesizedArgument,
+    types::functions::{SynthesizedParameter, SynthesizedParameters},
+    types::{FunctionType, Type},
     TypeId,
 };
 
@@ -38,7 +36,17 @@ pub fn call_type_handle_errors<T: crate::FSResolver>(
         Ok(FunctionCallResult {
             returned_type,
             warnings,
-        }) => returned_type,
+            called,
+        }) => {
+            // TODO warnings
+            if let Some(called) = called {
+                checking_data
+                    .type_mappings
+                    .called_functions
+                    .insert(crate::context::FunctionId(called.0));
+            }
+            returned_type
+        }
         Err(errors) => {
             for error in errors {
                 checking_data
@@ -64,20 +72,23 @@ pub fn call_type(
     if on == TypeId::ERROR_TYPE {
         Ok(FunctionCallResult {
             returned_type: on,
+            called: None,
             warnings: Default::default(),
         })
     } else if let Type::Function(function_type, variant) = types.get_type_by_id(on) {
         // TODO as Rc to avoid expensive clone
         let function_type = function_type.clone();
-        let arg = if let FunctionNature::Source(_, this_arg) = variant {
+
+        let this_argument = if let FunctionNature::Source(this_arg) = variant {
             this_arg.clone()
         } else {
+            crate::utils::notify!("Calling a function with unknown nature");
             None
         };
 
         // TODO should be done after call to check that arguments are correct
         if let Some(const_fn_ident) = function_type.constant_id.as_deref() {
-            let this_argument = this_argument.or(arg);
+            let this_argument = this_argument.or(this_argument);
             let has_dependent_argument = arguments.iter().any(|arg| {
                 types
                     .get_type_by_id(arg.into_type().expect("dependent spread types"))
@@ -122,6 +133,7 @@ pub fn call_type(
                 return Ok(FunctionCallResult {
                     returned_type: ty,
                     warnings: Default::default(),
+                    called: None,
                 });
             } else {
                 // TODO event
@@ -137,6 +149,7 @@ pub fn call_type(
                     return Ok(FunctionCallResult {
                         returned_type,
                         warnings: Default::default(),
+                        called: None,
                     });
                 } else {
                     crate::utils::notify!("Constant function calling failed, not constant pararms");
@@ -233,10 +246,11 @@ pub fn call_type(
                         effects: Default::default(),
                         closed_over_references: Default::default(),
                         // TODO
-                        kind: crate::structures::functions::FunctionKind::Arrow {
+                        kind: crate::types::FunctionKind::Arrow {
                             get_set: crate::GetSetGeneratorOrNone::None,
                         },
                         constant_id: None,
+                        id: FunctionId::NULL,
                     };
 
                     let new_constraint = types.register_type(Type::Function(

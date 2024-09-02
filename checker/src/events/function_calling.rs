@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use source_map::{SourceId, Span};
 
 use crate::{
-    structures::functions::{
-        FunctionCallingError, FunctionKind, FunctionType, SynthesizedArgument,
-    },
+    context::FunctionId,
+    structures::functions::{FunctionCallingError, SynthesizedArgument},
     types::{
         poly_types::{
             generics::generic_type_arguments::{
@@ -17,7 +16,7 @@ use crate::{
         },
         specialize,
         subtyping::{type_is_subtype, BasicEquality, NonEqualityReason, SubTypeResult},
-        Constructor, PolyNature, PolyPointer, Type, TypeId,
+        Constructor, FunctionKind, FunctionType, PolyNature, PolyPointer, Type, TypeId,
     },
 };
 
@@ -27,6 +26,7 @@ use super::{apply_event, EarlyReturn, RootReference};
 
 /// TODO *result* name bad
 pub struct FunctionCallResult {
+    pub called: Option<FunctionId>,
     pub returned_type: TypeId,
     pub warnings: (),
 }
@@ -549,6 +549,7 @@ impl FunctionType {
                 return Ok(FunctionCallResult {
                     returned_type,
                     warnings: (),
+                    called: Some(self.id.clone()),
                 });
             }
         }
@@ -572,6 +573,7 @@ impl FunctionType {
         Ok(FunctionCallResult {
             returned_type,
             warnings: (),
+            called: Some(self.id.clone()),
         })
     }
 }
