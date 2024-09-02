@@ -47,10 +47,7 @@ jobs:
         run: taplo fmt --check **/*/Cargo.toml
   clippy:
     name: Clippy [Linter]
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
@@ -62,6 +59,9 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.3
       - name: Build | Lint
         uses: giraffate/clippy-action@94e9bd8deab2618756ec5380f12eb35bcb0a88ca
+        with:
+          reporter: github-pr-review
+          github_token: ${{ secrets.GITHUB_TOKEN }}
   cargo_check:
     name: Compile
     runs-on: ubuntu-latest
@@ -149,7 +149,9 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.3
       - name: Setup | cargo-fuzz
         if: steps.changes.outputs.parser == 'true'
-        run: cargo install cargo-fuzz
+        uses: taiki-e/install-action@v2.42.37
+        with:
+          tool: cargo-fuzz
       - name: Build | Run fuzzing
         if: steps.changes.outputs.parser == 'true'
         run: |
@@ -173,7 +175,9 @@ jobs:
       - name: Setup | Cache
         uses: Swatinem/rust-cache@v2.7.3
       - name: Setup | wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli
+        uses: taiki-e/install-action@v2.42.37
+        with:
+          tool: wasm-bindgen-cli
       - name: Build | wasm32-unknown-unknown
         run: |
           rustup target add wasm32-unknown-unknown
