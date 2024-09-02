@@ -26,6 +26,7 @@ pub struct TypeStore {
 
 impl Default for TypeStore {
     fn default() -> Self {
+        // These have to be in the order of TypeId
         let mut types = vec![
             Type::NamedRooted {
                 name: "error".to_owned(),
@@ -76,6 +77,10 @@ impl Default for TypeStore {
                 name: "Function".to_owned(),
                 parameters: None,
             },
+            Type::NamedRooted {
+                name: "RegExp".to_owned(),
+                parameters: None,
+            },
             Type::Or(TypeId::STRING_TYPE, TypeId::NUMBER_TYPE),
             // true
             Type::Constant(crate::Constant::Boolean(true)),
@@ -90,7 +95,7 @@ impl Default for TypeStore {
             Type::Constant(crate::Constant::String("length".into())),
             // this arg shortcut
             Type::RootPolyType(PolyNature::ParentScope {
-                reference: crate::events::Reference::This,
+                reference: crate::events::RootReference::This,
                 based_on: crate::types::PolyPointer::Fixed(TypeId::ANY_TYPE),
             }),
             Type::RootPolyType(PolyNature::Generic {
@@ -130,14 +135,14 @@ impl Default for TypeStore {
 impl TypeStore {
     pub fn new_constant_type(&mut self, constant: crate::Constant) -> crate::TypeId {
         // TODO don't recreate same constant
-        let r#type = Type::Constant(constant);
+        let ty = Type::Constant(constant);
         // TODO maybe separate id
-        self.register_type(r#type)
+        self.register_type(ty)
     }
 
-    pub(crate) fn register_type(&mut self, r#type: Type) -> TypeId {
+    pub(crate) fn register_type(&mut self, ty: Type) -> TypeId {
         let id = TypeId(self.types.len().try_into().expect("too many types!"));
-        self.types.push(r#type);
+        self.types.push(ty);
         id
     }
 
@@ -170,13 +175,13 @@ impl TypeStore {
     }
 
     pub fn new_or_type(&mut self, lhs: TypeId, rhs: TypeId) -> TypeId {
-        let r#type = Type::Or(lhs, rhs);
-        self.register_type(r#type)
+        let ty = Type::Or(lhs, rhs);
+        self.register_type(ty)
     }
 
     pub fn new_and_type(&mut self, lhs: TypeId, rhs: TypeId) -> TypeId {
-        let r#type = Type::And(lhs, rhs);
-        self.register_type(r#type)
+        let ty = Type::And(lhs, rhs);
+        self.register_type(ty)
     }
 
     /// TODO temp
@@ -190,7 +195,7 @@ impl TypeStore {
 
     pub fn new_function_type_reference(
         &mut self,
-        type_parameters: super::poly_types::GenericFunctionTypeParameters,
+        type_parameters: Option<super::poly_types::GenericTypeParameters>,
         parameters: crate::structures::parameters::SynthesizedParameters,
         return_type: TypeId,
         span: source_map::Span,
@@ -199,17 +204,19 @@ impl TypeStore {
     ) -> TypeId {
         self.register_type(Type::Function(
             FunctionType {
-                generic_type_parameters: type_parameters,
+                type_parameters,
                 parameters,
                 return_type,
                 effects,
                 // TODO
                 closed_over_references: Default::default(),
                 // TODO
-                nature: crate::structures::functions::FunctionNature::Arrow,
+                kind: crate::structures::functions::FunctionKind::Arrow {
+                    get_set: crate::GetSetGeneratorOrNone::None,
+                },
                 constant_id,
             },
-            super::FunctionNature::Source(crate::context::FunctionId(span), None, None),
+            super::FunctionNature::Source(crate::context::FunctionId(span), None),
         ))
     }
 
@@ -228,17 +235,25 @@ impl TypeStore {
             },
         )));
         let result_union = self.register_type(Type::Or(true_res, false_res));
-        let r#type = Type::Constructor(super::Constructor::ConditionalTernary {
+        let ty = Type::Constructor(super::Constructor::ConditionalTernary {
             on,
             true_res,
             false_res,
             result_union,
         });
-        self.register_type(r#type)
+        self.register_type(ty)
     }
 
     pub fn new_anonymous_interface_ty(&mut self) -> TypeId {
-        let r#type = Type::Object(super::ObjectNature::AnonymousTypeAnnotation);
-        self.register_type(r#type)
+        let ty = Type::Object(super::ObjectNature::AnonymousTypeAnnotation);
+        self.register_type(ty)
+    }
+
+    /// From something like: let a: number => string. Rather than a actual function
+    pub fn new_type_annotation_function_type(&mut self, function_type: FunctionType) -> TypeId {
+        self.register_type(Type::Function(
+            function_type,
+            super::FunctionNature::Reference,
+        ))
     }
 }
