@@ -21,7 +21,9 @@ impl Variable {
 #[derive(Copy, Clone, Debug, binary_serialize_derive::BinarySerializable)]
 pub enum VariableMutability {
     Constant,
-    Mutable { reassignment_constraint: TypeId },
+    Mutable {
+        reassignment_constraint: Option<TypeId>,
+    },
 }
 
 #[derive(Clone, Debug)]
