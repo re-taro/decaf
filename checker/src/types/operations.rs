@@ -2,9 +2,9 @@ use source_map::Span;
 
 use crate::{
     context::Environment,
-    errors::{InvalidMathematicalOperation, TypeCheckError, TypeStringRepresentation},
-    structures::{functions::SynthesizedArgument, operators::*},
-    types::TypeStore,
+    diagnostics::{InvalidMathematicalOperation, TypeCheckError, TypeStringRepresentation},
+    structures::operators::*,
+    types::{functions::SynthesizedArgument, TypeStore},
     CheckingData, TypeId,
 };
 
@@ -72,47 +72,63 @@ pub fn evaluate_binary_operator(
     };
     // TODO handle things and convert to bin exprs
     super::calling::call_type(
-		op_type.unwrap().prop_to_type(),
-		// TODO faster!
-		vec![
-			SynthesizedArgument::NonSpread { ty: lhs, position: Span::NULL_SPAN },
-			SynthesizedArgument::NonSpread { ty: rhs, position: Span::NULL_SPAN },
-		],
-		None,
-		None,
-		environment,
-		types,
-		crate::events::CalledWithNew::None,
-	)
-	.map(|op| op.returned_type)
-	.map_err(|errors| {
-		// TODO temp
-		match errors.into_iter().next().unwrap() {
-			crate::structures::functions::FunctionCallingError::InvalidArgumentType { parameter_type, argument_type, argument_position, parameter_position, restriction } => {
-				crate::utils::notify!("{} {}", parameter_type, argument_type);
-				return InvalidMathematicalOperation {
-					lhs: TypeStringRepresentation::from_type_id(
-						lhs,
-						&environment.into_general_environment(),
-						&types,
-						false,
-					),
-					rhs: TypeStringRepresentation::from_type_id(
-						rhs,
-						&environment.into_general_environment(),
-						&types,
-						false,
-					),
-					operator,
-					position: Span::NULL_SPAN, // lhs.1.union(&rhs.1),
-				};
-			},
-			crate::structures::functions::FunctionCallingError::MissingArgument { .. } => unreachable!("binary operator should accept two operands"),
-			crate::structures::functions::FunctionCallingError::ExtraArguments { .. } => unreachable!("binary operator should have two operands"),
-			crate::structures::functions::FunctionCallingError::NotCallable { .. } => unreachable!("operator should be callable"),
-			crate::structures::functions::FunctionCallingError::ReferenceRestrictionDoesNotMatch { .. } => unreachable!("..."),
-		}
-	})
+        op_type.unwrap().prop_to_type(),
+        // TODO faster!
+        vec![
+            SynthesizedArgument::NonSpread {
+                ty: lhs,
+                position: Span::NULL_SPAN,
+            },
+            SynthesizedArgument::NonSpread {
+                ty: rhs,
+                position: Span::NULL_SPAN,
+            },
+        ],
+        None,
+        None,
+        environment,
+        types,
+        crate::events::CalledWithNew::None,
+    )
+    .map(|op| op.returned_type)
+    .map_err(|errors| {
+        use crate::events::FunctionCallingError;
+        match errors.into_iter().next().unwrap() {
+            FunctionCallingError::InvalidArgumentType {
+                parameter_type,
+                argument_type,
+                argument_position,
+                parameter_position,
+                restriction,
+            } => {
+                crate::utils::notify!("{} {}", parameter_type, argument_type);
+                return InvalidMathematicalOperation {
+                    lhs: TypeStringRepresentation::from_type_id(
+                        lhs,
+                        &environment.into_general_environment(),
+                        &types,
+                        false,
+                    ),
+                    rhs: TypeStringRepresentation::from_type_id(
+                        rhs,
+                        &environment.into_general_environment(),
+                        &types,
+                        false,
+                    ),
+                    operator,
+                    position: Span::NULL_SPAN, // lhs.1.union(&rhs.1),
+                };
+            }
+            FunctionCallingError::MissingArgument { .. } => {
+                unreachable!("binary operator should accept two operands")
+            }
+            FunctionCallingError::ExtraArguments { .. } => {
+                unreachable!("binary operator should have two operands")
+            }
+            FunctionCallingError::NotCallable { .. } => unreachable!("operator should be callable"),
+            FunctionCallingError::ReferenceRestrictionDoesNotMatch { .. } => unreachable!("..."),
+        }
+    })
 }
 
 pub fn evaluate_unary_operator(
