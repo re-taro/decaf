@@ -19,14 +19,12 @@ use crate::{
     CheckingData, Root, TypeId,
 };
 
-use super::{
-    AssignmentError, Context, ContextType, Environment, GeneralEnvironment, SetPropertyError,
-};
+use super::{AssignmentError, Context, ContextType, Environment, GeneralContext, SetPropertyError};
 
 #[derive(Debug)]
 pub struct Syntax<'a> {
     pub scope: Scope,
-    pub(super) parent: GeneralEnvironment<'a>,
+    pub(super) parent: GeneralContext<'a>,
     /// Synchronous events that occur
     pub events: Vec<Event>,
 
@@ -40,11 +38,11 @@ pub struct Syntax<'a> {
 }
 
 impl<'a> ContextType for Syntax<'a> {
-    fn into_parent_or_root<'b>(et: &'b Context<Self>) -> GeneralEnvironment<'b> {
-        GeneralEnvironment::Syntax(et)
+    fn into_parent_or_root<'b>(et: &'b Context<Self>) -> GeneralContext<'b> {
+        GeneralContext::Syntax(et)
     }
 
-    fn get_parent<'b>(&'b self) -> Option<&'b GeneralEnvironment<'b>> {
+    fn get_parent<'b>(&'b self) -> Option<&'b GeneralContext<'b>> {
         Some(&self.parent)
     }
 
@@ -296,27 +294,27 @@ impl<'a> Environment<'a> {
 
     pub(crate) fn get_root(&self) -> &Root {
         match self.context_type.parent {
-            GeneralEnvironment::Syntax(syntax) => syntax.get_root(),
-            GeneralEnvironment::Root(root) => root,
+            GeneralContext::Syntax(syntax) => syntax.get_root(),
+            GeneralContext::Root(root) => root,
         }
     }
 
-    pub fn get_environment_id(&self) -> super::ContextId {
+    pub fn get_ctxironment_id(&self) -> super::ContextId {
         self.context_id
     }
 
-    pub(crate) fn get_environment_type(&self) -> &Scope {
+    pub(crate) fn get_ctxironment_type(&self) -> &Scope {
         &self.context_type.scope
     }
 
-    pub(crate) fn get_environment_type_mut(&mut self) -> &mut Scope {
+    pub(crate) fn get_ctxironment_type_mut(&mut self) -> &mut Scope {
         &mut self.context_type.scope
     }
 
-    pub(crate) fn get_parent(&self) -> GeneralEnvironment {
+    pub(crate) fn get_parent(&self) -> GeneralContext {
         match self.context_type.parent {
-            GeneralEnvironment::Syntax(syn) => GeneralEnvironment::Syntax(syn),
-            GeneralEnvironment::Root(rt) => GeneralEnvironment::Root(rt),
+            GeneralContext::Syntax(syn) => GeneralContext::Syntax(syn),
+            GeneralContext::Root(rt) => GeneralContext::Root(rt),
         }
     }
 

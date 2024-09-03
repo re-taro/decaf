@@ -50,7 +50,7 @@ pub use behavior::{
     },
     variables::check_variable_initialization,
 };
-pub use context::{GeneralEnvironment, Root};
+pub use context::{GeneralContext, Root};
 pub use errors::{Diagnostic, DiagnosticKind, DiagnosticsContainer};
 pub use settings::TypeCheckSettings;
 pub use structures::{
