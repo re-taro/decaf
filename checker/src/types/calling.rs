@@ -1,13 +1,13 @@
 use source_map::Span;
 
 use crate::{
-    context::{Environment, FunctionId, PolyBase},
-    errors::TypeCheckError,
-    events::{CalledWithNew, Event, FunctionCallResult},
-    structures::functions::SynthesizedArgument,
+    context::{Environment, PolyBase},
+    diagnostics::TypeCheckError,
+    events::{CalledWithNew, Event, FunctionCallResult, FunctionCallingError},
+    types::functions::SynthesizedArgument,
     types::functions::{SynthesizedParameter, SynthesizedParameters},
     types::{FunctionType, Type},
-    TypeId,
+    FunctionId, TypeId,
 };
 
 use super::{Constructor, FunctionNature, TypeStore};
@@ -43,7 +43,7 @@ pub fn call_type_handle_errors<T: crate::FSResolver>(
                 checking_data
                     .type_mappings
                     .called_functions
-                    .insert(crate::context::FunctionId(called.0));
+                    .insert(crate::FunctionId(called.0));
             }
             returned_type
         }
@@ -68,7 +68,7 @@ pub fn call_type(
     environment: &mut Environment,
     types: &mut TypeStore,
     called_with_new: CalledWithNew,
-) -> Result<FunctionCallResult, Vec<crate::structures::functions::FunctionCallingError>> {
+) -> Result<FunctionCallResult, Vec<FunctionCallingError>> {
     if on == TypeId::ERROR_TYPE {
         Ok(FunctionCallResult {
             returned_type: on,

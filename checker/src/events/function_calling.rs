@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use source_map::{SourceId, Span};
 
 use crate::{
-    context::FunctionId,
-    structures::functions::{FunctionCallingError, SynthesizedArgument},
+    diagnostics::TypeStringRepresentation,
+    types::functions::SynthesizedArgument,
     types::{
         poly_types::{
             generics::generic_type_arguments::{
@@ -18,11 +18,38 @@ use crate::{
         subtyping::{type_is_subtype, BasicEquality, NonEqualityReason, SubTypeResult},
         Constructor, FunctionKind, FunctionType, PolyNature, PolyPointer, Type, TypeId,
     },
+    FunctionId,
 };
 
 use map_vec::Map as SmallMap;
 
 use super::{apply_event, EarlyReturn, RootReference};
+
+/// Errors from trying to call a function
+pub enum FunctionCallingError {
+    InvalidArgumentType {
+        parameter_type: TypeStringRepresentation,
+        argument_type: TypeStringRepresentation,
+        argument_position: Span,
+        parameter_position: Span,
+        restriction: Option<(Span, TypeStringRepresentation)>,
+    },
+    MissingArgument {
+        parameter_pos: Span,
+    },
+    ExtraArguments {
+        count: usize,
+        position: Span,
+    },
+    NotCallable {
+        calling: TypeStringRepresentation,
+    },
+    ReferenceRestrictionDoesNotMatch {
+        reference: RootReference,
+        requirement: TypeStringRepresentation,
+        found: TypeStringRepresentation,
+    },
+}
 
 /// TODO *result* name bad
 pub struct FunctionCallResult {
@@ -228,7 +255,7 @@ impl FunctionType {
                         {
                             Some((
                                 pos,
-                                crate::errors::TypeStringRepresentation::from_type_id(
+                                crate::diagnostics::TypeStringRepresentation::from_type_id(
                                     restriction,
                                     &environment.into_general_environment(),
                                     types,
@@ -239,18 +266,20 @@ impl FunctionType {
                             None
                         };
                         errors.push(FunctionCallingError::InvalidArgumentType {
-                            parameter_type: crate::errors::TypeStringRepresentation::from_type_id(
-                                parameter.ty,
-                                &environment.into_general_environment(),
-                                types,
-                                false,
-                            ),
-                            argument_type: crate::errors::TypeStringRepresentation::from_type_id(
-                                *argument_type,
-                                &environment.into_general_environment(),
-                                types,
-                                false,
-                            ),
+                            parameter_type:
+                                crate::diagnostics::TypeStringRepresentation::from_type_id(
+                                    parameter.ty,
+                                    &environment.into_general_environment(),
+                                    types,
+                                    false,
+                                ),
+                            argument_type:
+                                crate::diagnostics::TypeStringRepresentation::from_type_id(
+                                    *argument_type,
+                                    &environment.into_general_environment(),
+                                    types,
+                                    false,
+                                ),
                             parameter_position: parameter.position.clone(),
                             argument_position: argument_position.clone(),
                             restriction,
@@ -315,7 +344,7 @@ impl FunctionType {
                     {
                         Some((
                             pos,
-                            crate::errors::TypeStringRepresentation::from_type_id(
+                            crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 restriction,
                                 &environment.into_general_environment(),
                                 types,
@@ -326,13 +355,13 @@ impl FunctionType {
                         None
                     };
                     errors.push(FunctionCallingError::InvalidArgumentType {
-                        parameter_type: crate::errors::TypeStringRepresentation::from_type_id(
+                        parameter_type: crate::diagnostics::TypeStringRepresentation::from_type_id(
                             parameter.ty,
                             &environment.into_general_environment(),
                             types,
                             false,
                         ),
-                        argument_type: crate::errors::TypeStringRepresentation::from_type_id(
+                        argument_type: crate::diagnostics::TypeStringRepresentation::from_type_id(
                             *argument_type,
                             &environment.into_general_environment(),
                             types,
@@ -389,7 +418,7 @@ impl FunctionType {
                                 {
                                     Some((
                                         pos,
-                                        crate::errors::TypeStringRepresentation::from_type_id(
+                                        crate::diagnostics::TypeStringRepresentation::from_type_id(
                                             restriction,
                                             &environment.into_general_environment(),
                                             types,
@@ -401,14 +430,14 @@ impl FunctionType {
                                 };
                             errors.push(FunctionCallingError::InvalidArgumentType {
                                 parameter_type:
-                                    crate::errors::TypeStringRepresentation::from_type_id(
+                                    crate::diagnostics::TypeStringRepresentation::from_type_id(
                                         rest_parameter.item_type,
                                         &environment.into_general_environment(),
                                         types,
                                         false,
                                     ),
                                 argument_type:
-                                    crate::errors::TypeStringRepresentation::from_type_id(
+                                    crate::diagnostics::TypeStringRepresentation::from_type_id(
                                         *argument_type,
                                         &environment.into_general_environment(),
                                         types,
@@ -468,13 +497,13 @@ impl FunctionType {
                     ) {
                         errors.push(FunctionCallingError::ReferenceRestrictionDoesNotMatch {
                             reference,
-                            requirement: crate::errors::TypeStringRepresentation::from_type_id(
+                            requirement: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 restriction,
                                 &environment.into_general_environment(),
                                 &types,
                                 false,
                             ),
-                            found: crate::errors::TypeStringRepresentation::from_type_id(
+                            found: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 current_value,
                                 &environment.into_general_environment(),
                                 types,
@@ -507,13 +536,13 @@ impl FunctionType {
                     ) {
                         errors.push(FunctionCallingError::ReferenceRestrictionDoesNotMatch {
                             reference,
-                            requirement: crate::errors::TypeStringRepresentation::from_type_id(
+                            requirement: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 restriction,
                                 &environment.into_general_environment(),
                                 types,
                                 false,
                             ),
-                            found: crate::errors::TypeStringRepresentation::from_type_id(
+                            found: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 value_of_this,
                                 &environment.into_general_environment(),
                                 types,
