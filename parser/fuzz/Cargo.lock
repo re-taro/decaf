@@ -215,6 +215,7 @@ dependencies = [
  "decaf-parser",
  "libfuzzer-sys",
  "pretty_assertions",
+ "proc-macro2",
  "reqwest",
 ]
 
