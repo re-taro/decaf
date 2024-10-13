@@ -118,8 +118,8 @@ impl ASTNode for EnumMember {
             reader.next().ok_or_else(parse_lexing_error)?,
             "Enum variant",
         )?;
-        match reader.peek().unwrap().0 {
-            TSXToken::Assign => {
+        match reader.peek() {
+            Some(Token(TSXToken::Assign, _)) => {
                 reader.next();
                 let expression = Expression::from_reader(reader, state, settings)?;
                 Ok(EnumMember::Variant {
