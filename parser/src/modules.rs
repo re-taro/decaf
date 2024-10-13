@@ -1,6 +1,5 @@
 use derive_enum_from_into::EnumFrom;
 use source_map::SourceId;
-use temporary_annex::Annex;
 
 use crate::{
     block::{parse_statements_and_declarations, statements_and_declarations_to_string},
@@ -14,8 +13,8 @@ use crate::{
         type_alias::TypeAlias,
         InterfaceDeclaration,
     },
-    BlockId, BlockLike, BlockLikeMut, Chain, ChainVariable, Decorated, Decorator, ParseResult,
-    ParseSettings, ParsingState, StatementOrDeclaration, TSXKeyword, VisitSettings, Visitable,
+    BlockLike, BlockLikeMut, Decorated, Decorator, ParseOptions, ParseResult, ParsingState,
+    StatementOrDeclaration, TSXKeyword, VisitSettings,
 };
 
 use super::{lexer, ASTNode, EmptyCursorId, ParseError, Span, TSXToken, Token, TokenReader};
@@ -33,8 +32,7 @@ pub enum FromFileError {
 #[derive(Debug, Clone)]
 pub struct Module {
     pub items: Vec<StatementOrDeclaration>,
-    pub block_id: BlockId,
-    pub source_id: SourceId,
+    pub source: SourceId,
 }
 
 impl PartialEq for Module {
@@ -47,7 +45,7 @@ impl ASTNode for Module {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         statements_and_declarations_to_string(&self.items, buf, settings, depth)
@@ -66,18 +64,17 @@ impl ASTNode for Module {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
-        parse_statements_and_declarations(reader, state, settings).map(|(statements, block_id)| {
+        parse_statements_and_declarations(reader, state, settings).map(|statements| {
             // TODO null bad
-            let source_id = statements
+            let source = statements
                 .last()
-                .map(|stmt| stmt.get_position().source_id)
+                .map(|stmt| stmt.get_position().source)
                 .unwrap_or(SourceId::NULL);
             Module {
-                source_id,
+                source,
                 items: statements,
-                block_id,
             }
         })
     }
@@ -86,7 +83,7 @@ impl ASTNode for Module {
 impl Module {
     pub fn to_string_with_source_map(
         &self,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         fs: &impl source_map::FileSystem,
     ) -> (String, source_map::SourceMap) {
         let mut buf = source_map::StringWithSourceMap::new();
@@ -94,7 +91,7 @@ impl Module {
         buf.build(fs)
     }
 
-    pub fn length(&self, settings: &crate::ToStringSettings) -> usize {
+    pub fn length(&self, settings: &crate::ToStringOptions) -> usize {
         let mut buf = source_map::Counter::new();
         self.to_string_from_buffer(&mut buf, settings, 0);
         buf.get_count()
@@ -103,7 +100,7 @@ impl Module {
     #[cfg(not(target_family = "wasm"))]
     pub fn from_file(
         path: impl AsRef<Path>,
-        settings: ParseSettings,
+        settings: ParseOptions,
         cursors: Vec<(usize, EmptyCursorId)>,
         fs: &mut impl source_map::FileSystem,
     ) -> Result<Self, FromFileError> {
@@ -120,19 +117,24 @@ impl Module {
         data: &mut TData,
         settings: &VisitSettings,
     ) {
-        let mut chain =
-            Chain::new_with_initial(ChainVariable::UnderModule(self.block_id, self.source_id));
+        use crate::visiting::Visitable;
+        let mut chain = crate::Chain::new_with_initial(crate::ChainVariable::Module(self.source));
+        let mut chain = temporary_annex::Annex::new(&mut chain);
 
-        let mut chain = Annex::new(&mut chain);
-
-        visitors.visit_block(&crate::block::BlockLike::from(self), data, &chain);
+        {
+            visitors.visit_block(
+                &mut crate::block::BlockLike { items: &self.items },
+                data,
+                &chain,
+            );
+        }
 
         let iter = self.items.iter();
         if settings.reverse_statements {
+            iter.for_each(|item| item.visit(visitors, data, settings, &mut chain));
+        } else {
             iter.rev()
                 .for_each(|item| item.visit(visitors, data, settings, &mut chain));
-        } else {
-            iter.for_each(|item| item.visit(visitors, data, settings, &mut chain));
         }
     }
 
@@ -142,15 +144,13 @@ impl Module {
         data: &mut TData,
         settings: &VisitSettings,
     ) {
-        let mut chain =
-            Chain::new_with_initial(ChainVariable::UnderModule(self.block_id, self.source_id));
-
-        let mut chain = Annex::new(&mut chain);
+        use crate::visiting::Visitable;
+        let mut chain = crate::Chain::new_with_initial(crate::ChainVariable::Module(self.source));
+        let mut chain = temporary_annex::Annex::new(&mut chain);
 
         {
             visitors.visit_block_mut(
                 &mut crate::block::BlockLikeMut {
-                    block_id: self.block_id,
                     items: &mut self.items,
                 },
                 data,
@@ -172,7 +172,6 @@ impl Module {
 impl<'a> From<&'a Module> for BlockLike<'a> {
     fn from(module: &'a Module) -> Self {
         BlockLike {
-            block_id: module.block_id,
             items: &module.items,
         }
     }
@@ -181,7 +180,6 @@ impl<'a> From<&'a Module> for BlockLike<'a> {
 impl<'a> From<&'a mut Module> for BlockLikeMut<'a> {
     fn from(module: &'a mut Module) -> Self {
         BlockLikeMut {
-            block_id: module.block_id,
             items: &mut module.items,
         }
     }
@@ -213,7 +211,7 @@ impl TypeDefinitionModule {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let mut declarations = Vec::new();
         loop {
@@ -241,8 +239,8 @@ impl TypeDefinitionModule {
     #[cfg(target_family = "wasm")]
     pub fn from_string(
         source: String,
-        settings: ParseSettings,
-        source_id: SourceId,
+        settings: ParseOptions,
+        source: SourceId,
         cursors: Vec<(usize, EmptyCursorId)>,
     ) -> ParseResult<(Self, ParsingState)> {
         // TODO this should be covered by settings
@@ -260,7 +258,7 @@ impl TypeDefinitionModule {
             &source,
             &mut queue,
             &lex_settings,
-            Some(source_id),
+            Some(source),
             None,
             cursors,
         )?;
@@ -277,17 +275,20 @@ impl TypeDefinitionModule {
     #[cfg(not(target_family = "wasm"))]
     pub fn from_string(
         source: String,
-        settings: ParseSettings,
+        settings: ParseOptions,
         source_id: SourceId,
         cursors: Vec<(usize, EmptyCursorId)>,
     ) -> ParseResult<(Self, ParsingState)> {
+        use source_map::LineStarts;
         use std::thread;
         use tokenizer_lib::ParallelTokenQueue;
 
         // Extension which includes pulling in the string as source
         let (mut sender, mut reader) = ParallelTokenQueue::new();
+        let line_starts = LineStarts::new(source.as_str());
+
         let parsing_thread = thread::spawn(move || {
-            let mut state = ParsingState::default();
+            let mut state = ParsingState { line_starts };
             let res = Self::from_reader(&mut reader, &mut state, &settings);
             match res {
                 Ok(ast) => {
@@ -320,7 +321,7 @@ impl TypeDefinitionModule {
     #[cfg(not(target_family = "wasm"))]
     pub fn from_file(
         path: impl AsRef<Path>,
-        settings: ParseSettings,
+        settings: ParseOptions,
         cursors: Vec<(usize, EmptyCursorId)>,
         fs: &mut impl source_map::FileSystem,
     ) -> Result<(Self, ParsingState), FromFileError> {
@@ -334,7 +335,7 @@ impl ASTNode for TypeDefinitionModuleDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let decorators = decorators_from_reader(reader, state, settings)?;
         match reader.peek().ok_or_else(parse_lexing_error)? {
@@ -391,7 +392,7 @@ impl ASTNode for TypeDefinitionModuleDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         _buf: &mut T,
-        _settings: &crate::ToStringSettings,
+        _settings: &crate::ToStringOptions,
         _depth: u8,
     ) {
         todo!("tdms to_string_from_buffer");
@@ -405,7 +406,7 @@ impl ASTNode for TypeDefinitionModuleDeclaration {
 pub(crate) fn parse_declare_item(
     reader: &mut impl TokenReader<TSXToken, Span>,
     state: &mut crate::ParsingState,
-    settings: &ParseSettings,
+    settings: &ParseOptions,
     decorators: Vec<Decorator>,
     declare_span: Span,
 ) -> Result<TypeDefinitionModuleDeclaration, ParseError> {

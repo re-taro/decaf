@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use crate::tsx_keywords::New;
 use crate::{
     errors::parse_lexing_error, expressions::TemplateLiteralPart,
-    extensions::decorators::Decorated, CursorId, Decorator, Keyword, ParseResult, TypeId,
-    VariableField, VariableFieldInTypeReference, WithComment,
+    extensions::decorators::Decorated, CursorId, Decorator, Keyword, ParseResult, VariableField,
+    VariableFieldInTypeAnnotation, WithComment,
 };
 use crate::{parse_bracketed, to_string_bracketed};
 use derive_partial_eq_extras::PartialEqExtras;
@@ -16,7 +16,7 @@ use super::{
 };
 
 use crate::{
-    tokens::token_as_identifier, ASTNode, NumberStructure, ParseError, ParseSettings, Span,
+    tokens::token_as_identifier, ASTNode, NumberStructure, ParseError, ParseOptions, Span,
     TSXKeyword, TSXToken, Token, TokenReader,
 };
 
@@ -29,17 +29,17 @@ use crate::{
     feature = "self-rust-tokenize",
     derive(self_rust_tokenize::SelfRustTokenize)
 )]
-pub enum TypeReference {
+pub enum TypeAnnotation {
     /// A name e.g. `IPost`
     Name(String, Span),
     /// A name e.g. `Intl.IPost`. TODO can there be more than 2 members
     NamespacedName(String, String, Span),
     /// A name with generics e.g. `Array<number>`
-    NameWithGenericArguments(String, Vec<TypeReference>, Span),
+    NameWithGenericArguments(String, Vec<TypeAnnotation>, Span),
     /// Union e.g. `number | string`
-    Union(Vec<TypeReference>),
+    Union(Vec<TypeAnnotation>),
     /// Intersection e.g. `c & d`
-    Intersection(Vec<TypeReference>),
+    Intersection(Vec<TypeAnnotation>),
     /// String literal e.g. `"foo"`
     StringLiteral(String, Span),
     /// Number literal e.g. `45`
@@ -47,38 +47,36 @@ pub enum TypeReference {
     /// Boolean literal e.g. `true`
     BooleanLiteral(bool, Span),
     /// Array literal e.g. `string[]`. This is syntactic sugar for `Array` with type arguments. **This is not the same
-    /// as a [TypeReference::TupleLiteral]**
-    ArrayLiteral(Box<TypeReference>, Span),
+    /// as a [TypeAnnotation::TupleLiteral]**
+    ArrayLiteral(Box<TypeAnnotation>, Span),
     /// Function literal e.g. `(x: string) => string`
     FunctionLiteral {
         type_parameters: Option<Vec<GenericTypeConstraint>>,
-        parameters: TypeReferenceFunctionParameters,
-        return_type: Box<TypeReference>,
-        /// TODO...
-        type_id: TypeId,
+        parameters: TypeAnnotationFunctionParameters,
+        return_type: Box<TypeAnnotation>,
     },
     /// Construction literal e.g. `new (x: string) => string`
     ConstructorLiteral {
         new_keyword: Keyword<New>,
         type_parameters: Option<Vec<GenericTypeConstraint>>,
-        parameters: TypeReferenceFunctionParameters,
-        return_type: Box<TypeReference>,
+        parameters: TypeAnnotationFunctionParameters,
+        return_type: Box<TypeAnnotation>,
     },
     /// Object literal e.g. `{ y: string }`
     /// Here [TypeId] refers to the type it declares
-    ObjectLiteral(Vec<Decorated<InterfaceMember>>, TypeId, Span),
+    ObjectLiteral(Vec<Decorated<InterfaceMember>>, Span),
     /// Tuple literal e.g. `[number, x: string]`
-    TupleLiteral(Vec<TupleElement>, TypeId, Span),
+    TupleLiteral(Vec<TupleElement>, Span),
     ///
-    TemplateLiteral(Vec<TemplateLiteralPart<TypeReference>>, Span),
+    TemplateLiteral(Vec<TemplateLiteralPart<TypeAnnotation>>, Span),
     /// Declares type as not assignable (still has interior mutability) e.g. `readonly number`
-    Readonly(Box<TypeReference>, Span),
+    Readonly(Box<TypeAnnotation>, Span),
     /// Declares type as being union type of all property types e.g. `T[K]`
-    Index(Box<TypeReference>, Box<TypeReference>, Span),
+    Index(Box<TypeAnnotation>, Box<TypeAnnotation>, Span),
     /// KeyOf
-    KeyOf(Box<TypeReference>, Span),
+    KeyOf(Box<TypeAnnotation>, Span),
     /// For operation precedence reasons
-    ParenthesizedReference(Box<TypeReference>, Span),
+    ParenthesizedReference(Box<TypeAnnotation>, Span),
     Conditional {
         condition: TypeCondition,
         resolve_true: TypeConditionResult,
@@ -87,7 +85,7 @@ pub enum TypeReference {
     },
     Decorated(Decorator, Box<Self>, Span),
     #[self_tokenize_field(0)]
-    Cursor(CursorId<TypeReference>, Span),
+    Cursor(CursorId<TypeAnnotation>, Span),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,15 +96,15 @@ pub enum TypeReference {
 pub enum TupleElement {
     NonSpread {
         name: Option<String>,
-        ty: TypeReference,
+        ty: TypeAnnotation,
     },
     Spread {
         name: Option<String>,
-        ty: TypeReference,
+        ty: TypeAnnotation,
     },
 }
 
-/// Condition in a [TypeReference::Conditional]
+/// Condition in a [TypeAnnotation::Conditional]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "self-rust-tokenize",
@@ -114,13 +112,13 @@ pub enum TupleElement {
 )]
 pub enum TypeCondition {
     Extends {
-        r#type: Box<TypeReference>,
-        extends: Box<TypeReference>,
+        ty: Box<TypeAnnotation>,
+        extends: Box<TypeAnnotation>,
         position: Span,
     },
     Is {
-        r#type: Box<TypeReference>,
-        is: Box<TypeReference>,
+        ty: Box<TypeAnnotation>,
+        is: Box<TypeAnnotation>,
         position: Span,
     },
 }
@@ -129,19 +127,17 @@ impl TypeCondition {
     pub(crate) fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {
-            TypeCondition::Extends {
-                r#type, extends, ..
-            } => {
-                r#type.to_string_from_buffer(buf, settings, depth);
+            TypeCondition::Extends { ty, extends, .. } => {
+                ty.to_string_from_buffer(buf, settings, depth);
                 buf.push_str(" extends ");
                 extends.to_string_from_buffer(buf, settings, depth);
             }
-            TypeCondition::Is { r#type, is, .. } => {
-                r#type.to_string_from_buffer(buf, settings, depth);
+            TypeCondition::Is { ty, is, .. } => {
+                ty.to_string_from_buffer(buf, settings, depth);
                 buf.push_str(" is ");
                 is.to_string_from_buffer(buf, settings, depth);
             }
@@ -157,7 +153,7 @@ impl TypeCondition {
     }
 }
 
-/// The result of a [TypeReference::Condition]
+/// The result of a [TypeAnnotation::Condition]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "self-rust-tokenize",
@@ -165,8 +161,8 @@ impl TypeCondition {
 )]
 pub enum TypeConditionResult {
     /// TODO e.g. `infer number`
-    Infer(Box<TypeReference>, Span),
-    Reference(Box<TypeReference>),
+    Infer(Box<TypeAnnotation>, Span),
+    Reference(Box<TypeAnnotation>),
 }
 
 impl ASTNode for TypeConditionResult {
@@ -180,18 +176,18 @@ impl ASTNode for TypeConditionResult {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         if matches!(
             reader.peek().unwrap().0,
             TSXToken::Keyword(TSXKeyword::Infer)
         ) {
             let Token(_, start) = reader.next().unwrap();
-            let inferred_type = TypeReference::from_reader(reader, state, settings)?;
+            let inferred_type = TypeAnnotation::from_reader(reader, state, settings)?;
             let position = start.union(&inferred_type.get_position());
             Ok(Self::Infer(Box::new(inferred_type), position))
         } else {
-            TypeReference::from_reader(reader, state, settings)
+            TypeAnnotation::from_reader(reader, state, settings)
                 .map(|ty_ref| Self::Reference(Box::new(ty_ref)))
         }
     }
@@ -199,7 +195,7 @@ impl ASTNode for TypeConditionResult {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {
@@ -214,11 +210,11 @@ impl ASTNode for TypeConditionResult {
     }
 }
 
-impl ASTNode for TypeReference {
+impl ASTNode for TypeAnnotation {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         Self::from_reader_with_config(reader, state, settings, false)
     }
@@ -226,7 +222,7 @@ impl ASTNode for TypeReference {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {
@@ -235,10 +231,10 @@ impl ASTNode for TypeReference {
                     panic!()
                 }
             }
-            Self::Decorated(decorator, on_type_reference, _) => {
+            Self::Decorated(decorator, on_type_annotation, _) => {
                 decorator.to_string_from_buffer(buf, settings, depth);
                 buf.push(' ');
-                on_type_reference.to_string_from_buffer(buf, settings, depth)
+                on_type_annotation.to_string_from_buffer(buf, settings, depth)
             }
             Self::Name(name, _) => buf.push_str(name),
             Self::NameWithGenericArguments(name, arguments, _) => {
@@ -286,7 +282,7 @@ impl ASTNode for TypeReference {
                 }
             }
             Self::NamespacedName(..) => unimplemented!(),
-            Self::ObjectLiteral(members, _, _) => {
+            Self::ObjectLiteral(members, _) => {
                 buf.push('{');
                 for (at_end, member) in members.iter().endiate() {
                     member.to_string_from_buffer(buf, settings, depth);
@@ -296,7 +292,7 @@ impl ASTNode for TypeReference {
                 }
                 buf.push('}');
             }
-            Self::TupleLiteral(members, _, _) => {
+            Self::TupleLiteral(members, _) => {
                 buf.push('[');
                 for (at_end, member) in members.iter().endiate() {
                     match member {
@@ -388,8 +384,8 @@ impl ASTNode for TypeReference {
             | Self::NumberLiteral(_, position)
             | Self::Readonly(_, position)
             | Self::Conditional { position, .. }
-            | Self::ObjectLiteral(_, _, position)
-            | Self::TupleLiteral(_, _, position)
+            | Self::ObjectLiteral(_, position)
+            | Self::TupleLiteral(_, position)
             | Self::Index(_, _, position)
             | Self::KeyOf(_, position)
             | Self::ParenthesizedReference(_, position)
@@ -417,13 +413,13 @@ impl ASTNode for TypeReference {
     }
 }
 
-impl TypeReference {
+impl TypeAnnotation {
     /// Also returns the depth the generic arguments ran over
     /// TODO refactor and tidy a lot of this
     pub(crate) fn from_reader_with_config(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         return_on_union_or_intersection: bool,
     ) -> ParseResult<Self> {
         while let Some(Token(TSXToken::Comment(_) | TSXToken::MultiLineComment(_), _)) =
@@ -469,7 +465,7 @@ impl TypeReference {
                 // If arrow function OR group
                 if let Some(Token(TSXToken::Arrow, _)) = next {
                     let parameters =
-                        TypeReferenceFunctionParameters::from_reader_sub_open_parenthesis(
+                        TypeAnnotationFunctionParameters::from_reader_sub_open_parenthesis(
                             reader,
                             state,
                             settings,
@@ -480,27 +476,25 @@ impl TypeReference {
                     Self::FunctionLiteral {
                         type_parameters: None,
                         parameters,
-                        type_id: TypeId::new(),
                         return_type: Box::new(return_type),
                     }
                 } else {
-                    let type_reference = Self::from_reader(reader, state, settings)?;
+                    let type_annotation = Self::from_reader(reader, state, settings)?;
                     let end_position = reader.expect_next(TSXToken::CloseParentheses)?;
                     let position = start_position.union(&end_position);
-                    Self::ParenthesizedReference(type_reference.into(), position)
+                    Self::ParenthesizedReference(type_annotation.into(), position)
                 }
             }
             Token(TSXToken::OpenChevron, _start) => {
                 let (type_parameters, _) =
                     parse_bracketed(reader, state, settings, None, TSXToken::CloseChevron)?;
                 let parameters =
-                    TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+                    TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
                 reader.expect_next(TSXToken::Arrow)?;
                 let return_type = Self::from_reader(reader, state, settings)?;
                 Self::FunctionLiteral {
                     type_parameters: Some(type_parameters),
                     parameters,
-                    type_id: TypeId::new(),
                     return_type: Box::new(return_type),
                 }
             }
@@ -508,7 +502,7 @@ impl TypeReference {
             Token(TSXToken::OpenBrace, start) => {
                 let members = parse_interface_members(reader, state, settings)?;
                 let position = start.union(&reader.expect_next(TSXToken::CloseBrace)?);
-                Self::ObjectLiteral(members, TypeId::new(), position)
+                Self::ObjectLiteral(members, position)
             }
             // Tuple literal type
             Token(TSXToken::OpenBracket, start_pos) => {
@@ -529,10 +523,10 @@ impl TypeReference {
                     };
                     let member = if let Some(Token(TSXToken::Spread, _)) = reader.peek() {
                         reader.next();
-                        let ty = TypeReference::from_reader(reader, state, settings)?;
+                        let ty = TypeAnnotation::from_reader(reader, state, settings)?;
                         TupleElement::Spread { name, ty }
                     } else {
-                        let ty = TypeReference::from_reader(reader, state, settings)?;
+                        let ty = TypeAnnotation::from_reader(reader, state, settings)?;
                         TupleElement::NonSpread { name, ty }
                     };
                     members.push(member);
@@ -543,7 +537,7 @@ impl TypeReference {
                     }
                 }
                 let end_pos = reader.expect_next(TSXToken::CloseBracket)?;
-                Self::TupleLiteral(members, TypeId::new(), start_pos.union(&end_pos))
+                Self::TupleLiteral(members, start_pos.union(&end_pos))
             }
             Token(TSXToken::TemplateLiteralStart, start) => {
                 let mut parts = Vec::new();
@@ -554,7 +548,7 @@ impl TypeReference {
                             parts.push(TemplateLiteralPart::Static(chunk));
                         }
                         Token(TSXToken::TemplateLiteralExpressionStart, _) => {
-                            let expression = TypeReference::from_reader(reader, state, settings)?;
+                            let expression = TypeAnnotation::from_reader(reader, state, settings)?;
                             reader.expect_next(TSXToken::TemplateLiteralExpressionEnd)?;
                             parts.push(TemplateLiteralPart::Dynamic(Box::new(expression)));
                         }
@@ -567,14 +561,14 @@ impl TypeReference {
                 Self::TemplateLiteral(parts, start.union(&end.unwrap()))
             }
             Token(TSXToken::Keyword(TSXKeyword::Readonly), start) => {
-                let readonly_type = TypeReference::from_reader(reader, state, settings)?;
+                let readonly_type = TypeAnnotation::from_reader(reader, state, settings)?;
                 let position = start.union(&readonly_type.get_position());
-                return Ok(TypeReference::Readonly(Box::new(readonly_type), position));
+                return Ok(TypeAnnotation::Readonly(Box::new(readonly_type), position));
             }
             Token(TSXToken::Keyword(TSXKeyword::KeyOf), start) => {
-                let key_of_type = TypeReference::from_reader(reader, state, settings)?;
+                let key_of_type = TypeAnnotation::from_reader(reader, state, settings)?;
                 let position = start.union(&key_of_type.get_position());
-                return Ok(TypeReference::KeyOf(Box::new(key_of_type), position));
+                return Ok(TypeAnnotation::KeyOf(Box::new(key_of_type), position));
             }
             Token(TSXToken::Keyword(TSXKeyword::New), span) => {
                 let type_parameters = reader
@@ -586,7 +580,7 @@ impl TypeReference {
                     })
                     .transpose()?;
                 let parameters =
-                    TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+                    TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
 
                 reader.expect_next(TSXToken::Arrow)?;
                 let return_type = Self::from_reader(reader, state, settings)?;
@@ -613,7 +607,7 @@ impl TypeReference {
             let (namespace_member, end) =
                 token_as_identifier(reader.next().unwrap(), "namespace name")?;
             let position = start.union(&end);
-            return Ok(TypeReference::NamespacedName(
+            return Ok(TypeAnnotation::NamespacedName(
                 name,
                 namespace_member,
                 position,
@@ -659,7 +653,7 @@ impl TypeReference {
                 reference = Self::ArrayLiteral(Box::new(reference), position);
             } else {
                 // E.g type allTypes = Person[keyof Person];
-                let indexer = TypeReference::from_reader(reader, state, settings)?;
+                let indexer = TypeAnnotation::from_reader(reader, state, settings)?;
                 let position = start.union(&reader.expect_next(TSXToken::CloseBracket)?);
                 reference = Self::Index(Box::new(reference), Box::new(indexer), position);
             }
@@ -670,11 +664,11 @@ impl TypeReference {
             Some(Token(TSXToken::Keyword(TSXKeyword::Extends), _)) => {
                 reader.next();
                 let extends_type =
-                    TypeReference::from_reader_with_config(reader, state, settings, true)?;
+                    TypeAnnotation::from_reader_with_config(reader, state, settings, true)?;
                 // TODO depth
                 let position = reference.get_position().union(&extends_type.get_position());
                 let condition = TypeCondition::Extends {
-                    r#type: Box::new(reference),
+                    ty: Box::new(reference),
                     extends: Box::new(extends_type),
                     position,
                 };
@@ -688,7 +682,7 @@ impl TypeReference {
                 let rhs = TypeConditionResult::from_reader(reader, state, settings)?;
                 let position = condition.get_position().union(&rhs.get_position());
                 // TODO zero here ..?
-                Ok(TypeReference::Conditional {
+                Ok(TypeAnnotation::Conditional {
                     condition,
                     resolve_true: lhs,
                     resolve_false: rhs,
@@ -698,11 +692,11 @@ impl TypeReference {
             Some(Token(TSXToken::Keyword(TSXKeyword::Is), _)) => {
                 reader.next();
                 let is_type =
-                    TypeReference::from_reader_with_config(reader, state, settings, true)?;
+                    TypeAnnotation::from_reader_with_config(reader, state, settings, true)?;
                 // TODO depth
                 let position = reference.get_position().union(&is_type.get_position());
                 let condition = TypeCondition::Is {
-                    r#type: Box::new(reference),
+                    ty: Box::new(reference),
                     is: Box::new(is_type),
                     position,
                 };
@@ -717,7 +711,7 @@ impl TypeReference {
                 let position = condition
                     .get_position()
                     .union(&resolve_false.get_position());
-                Ok(TypeReference::Conditional {
+                Ok(TypeAnnotation::Conditional {
                     condition,
                     resolve_true,
                     resolve_false,
@@ -756,18 +750,17 @@ impl TypeReference {
                 let position = reference.get_position().into_owned();
                 let function = Self::FunctionLiteral {
                     type_parameters: None,
-                    parameters: TypeReferenceFunctionParameters {
-                        parameters: vec![TypeReferenceFunctionParameter {
+                    parameters: TypeAnnotationFunctionParameters {
+                        parameters: vec![TypeAnnotationFunctionParameter {
                             name: None,
-                            type_reference: reference,
+                            type_annotation: reference,
+                            is_optional: false,
                             decorators: Default::default(),
                         }],
-                        optional_parameters: Default::default(),
                         rest_parameter: None,
                         position,
                     },
                     return_type: Box::new(return_type),
-                    type_id: TypeId::new(),
                 };
                 Ok(function)
             }
@@ -776,19 +769,19 @@ impl TypeReference {
     }
 }
 
-/// Parses the arguments (vector of [TypeReference]s) parsed to to a type reference or function call.
+/// Parses the arguments (vector of [TypeAnnotation]s) parsed to to a type reference or function call.
 /// Returns arguments and the closing span.
 /// TODO could use parse bracketed but needs to have the more complex logic inside
 pub(crate) fn generic_arguments_from_reader_sub_open_angle(
     reader: &mut impl TokenReader<TSXToken, Span>,
     state: &mut crate::ParsingState,
-    settings: &ParseSettings,
+    settings: &ParseOptions,
     return_on_union_or_intersection: bool,
-) -> ParseResult<(Vec<TypeReference>, Span)> {
+) -> ParseResult<(Vec<TypeAnnotation>, Span)> {
     let mut generic_arguments = Vec::new();
 
     loop {
-        let argument = TypeReference::from_reader_with_config(
+        let argument = TypeAnnotation::from_reader_with_config(
             reader,
             state,
             settings,
@@ -806,7 +799,7 @@ pub(crate) fn generic_arguments_from_reader_sub_open_angle(
             let close_chevron_span = Span {
                 start: span.start,
                 end: span.start + 1,
-                source_id: span.source_id,
+                source: span.source,
             };
             // Snipped
             span.start += 1;
@@ -818,7 +811,7 @@ pub(crate) fn generic_arguments_from_reader_sub_open_angle(
             let close_chevron_span = Span {
                 start: span.start,
                 end: span.start + 1,
-                source_id: span.source_id,
+                source: span.source,
             };
             // Snipped
             span.start += 1;
@@ -848,14 +841,13 @@ pub(crate) fn generic_arguments_from_reader_sub_open_angle(
     feature = "self-rust-tokenize",
     derive(self_rust_tokenize::SelfRustTokenize)
 )]
-pub struct TypeReferenceFunctionParameters {
-    pub parameters: Vec<TypeReferenceFunctionParameter>,
-    pub optional_parameters: Vec<TypeReferenceFunctionParameter>,
-    pub rest_parameter: Option<Box<TypeReferenceSpreadFunctionParameter>>,
+pub struct TypeAnnotationFunctionParameters {
+    pub parameters: Vec<TypeAnnotationFunctionParameter>,
+    pub rest_parameter: Option<Box<TypeAnnotationSpreadFunctionParameter>>,
     pub position: Span,
 }
 
-impl ASTNode for TypeReferenceFunctionParameters {
+impl ASTNode for TypeAnnotationFunctionParameters {
     fn get_position(&self) -> Cow<Span> {
         Cow::Borrowed(&self.position)
     }
@@ -863,7 +855,7 @@ impl ASTNode for TypeReferenceFunctionParameters {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let span = reader.expect_next(TSXToken::OpenParentheses)?;
         Self::from_reader_sub_open_parenthesis(reader, state, settings, span)
@@ -872,52 +864,43 @@ impl ASTNode for TypeReferenceFunctionParameters {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         for parameter in self.parameters.iter() {
             if let Some(ref name) = parameter.name {
                 name.to_string_from_buffer(buf, settings, depth);
             }
-            buf.push_str(": ");
-            parameter
-                .type_reference
-                .to_string_from_buffer(buf, settings, depth);
-        }
-        for parameter in self.optional_parameters.iter() {
-            if let Some(ref name) = parameter.name {
-                name.to_string_from_buffer(buf, settings, depth);
+            if parameter.is_optional {
+                buf.push_str("?: ");
+            } else {
+                buf.push_str(": ");
             }
-            buf.push_str("?: ");
             parameter
-                .type_reference
+                .type_annotation
                 .to_string_from_buffer(buf, settings, depth);
         }
         if let Some(ref rest_parameter) = self.rest_parameter {
             buf.push_str("...");
             buf.push_str(&rest_parameter.name);
             rest_parameter
-                .type_reference
+                .type_annotation
                 .to_string_from_buffer(buf, settings, depth);
         }
     }
 }
 
-impl TypeReferenceFunctionParameters {
+impl TypeAnnotationFunctionParameters {
     pub(crate) fn from_reader_sub_open_parenthesis(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         open_paren_span: Span,
     ) -> ParseResult<Self> {
         let mut parameters = Vec::new();
-        let mut optional_parameters = Vec::new();
         let mut rest_parameter = None;
         while !matches!(reader.peek(), Some(Token(TSXToken::CloseParentheses, _))) {
-            while reader
-                .peek()
-                .map_or(false, |Token(r#type, _)| r#type.is_comment())
-            {
+            while reader.peek().map_or(false, |Token(ty, _)| ty.is_comment()) {
                 reader.next();
             }
             let mut decorators = Vec::<Decorator>::new();
@@ -931,11 +914,11 @@ impl TypeReferenceFunctionParameters {
                     "spread function parameter",
                 )?;
                 reader.expect_next(TSXToken::Colon)?;
-                let type_reference = TypeReference::from_reader(reader, state, settings)?;
-                rest_parameter = Some(Box::new(TypeReferenceSpreadFunctionParameter {
+                let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+                rest_parameter = Some(Box::new(TypeAnnotationSpreadFunctionParameter {
                     spread_position: span,
                     name,
-                    type_reference,
+                    type_annotation,
                     decorators,
                 }));
                 break;
@@ -952,7 +935,7 @@ impl TypeReferenceFunctionParameters {
                     }
                     _ => depth == 0,
                 });
-                let name: Option<WithComment<VariableField<VariableFieldInTypeReference>>> =
+                let name: Option<WithComment<VariableField<VariableFieldInTypeAnnotation>>> =
                     if let Some(Token(TSXToken::Colon | TSXToken::OptionalMember, _)) =
                         after_variable_field
                     {
@@ -973,17 +956,13 @@ impl TypeReferenceFunctionParameters {
                         ));
                     }
                 };
-                let type_reference = TypeReference::from_reader(reader, state, settings)?;
-                let parameter = TypeReferenceFunctionParameter {
+                let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+                parameters.push(TypeAnnotationFunctionParameter {
                     decorators,
                     name,
-                    type_reference,
-                };
-                if is_optional {
-                    optional_parameters.push(parameter);
-                } else {
-                    parameters.push(parameter);
-                }
+                    type_annotation,
+                    is_optional,
+                });
             }
 
             if reader
@@ -994,10 +973,9 @@ impl TypeReferenceFunctionParameters {
             }
         }
         let end_span = reader.expect_next(TSXToken::CloseParentheses)?;
-        Ok(TypeReferenceFunctionParameters {
+        Ok(TypeAnnotationFunctionParameters {
             position: open_paren_span.union(&end_span),
             parameters,
-            optional_parameters,
             rest_parameter,
         })
     }
@@ -1008,23 +986,24 @@ impl TypeReferenceFunctionParameters {
     feature = "self-rust-tokenize",
     derive(self_rust_tokenize::SelfRustTokenize)
 )]
-pub struct TypeReferenceFunctionParameter {
+pub struct TypeAnnotationFunctionParameter {
     pub decorators: Vec<Decorator>,
     /// Ooh nice optional
-    pub name: Option<WithComment<VariableField<VariableFieldInTypeReference>>>,
-    pub type_reference: TypeReference,
+    pub name: Option<WithComment<VariableField<VariableFieldInTypeAnnotation>>>,
+    pub type_annotation: TypeAnnotation,
+    pub is_optional: bool,
 }
 
-impl TypeReferenceFunctionParameter {
+impl TypeAnnotationFunctionParameter {
     // TODO decorators
     pub fn get_position(&self) -> Cow<Span> {
         if let Some(ref name) = self.name {
             Cow::Owned(
                 name.get_position()
-                    .union(&self.type_reference.get_position()),
+                    .union(&self.type_annotation.get_position()),
             )
         } else {
-            self.type_reference.get_position()
+            self.type_annotation.get_position()
         }
     }
 }
@@ -1034,11 +1013,11 @@ impl TypeReferenceFunctionParameter {
     feature = "self-rust-tokenize",
     derive(self_rust_tokenize::SelfRustTokenize)
 )]
-pub struct TypeReferenceSpreadFunctionParameter {
+pub struct TypeAnnotationSpreadFunctionParameter {
     pub decorators: Vec<Decorator>,
     pub spread_position: Span,
     pub name: String,
-    pub type_reference: TypeReference,
+    pub type_annotation: TypeAnnotation,
 }
 
 #[cfg(test)]
@@ -1048,50 +1027,53 @@ mod tests {
 
     #[test]
     fn name() {
-        assert_matches_ast!("string", TypeReference::Name(Deref @ "string", span!(0, 6)))
+        assert_matches_ast!(
+            "string",
+            TypeAnnotation::Name(Deref @ "string", span!(0, 6))
+        )
     }
 
     #[test]
     fn literals() {
         assert_matches_ast!(
             "\"string\"",
-            TypeReference::StringLiteral(Deref @ "string", span!(0, 8))
+            TypeAnnotation::StringLiteral(Deref @ "string", span!(0, 8))
         );
         assert_matches_ast!(
             "45",
-            TypeReference::NumberLiteral(NumberStructure::Number(_), span!(0, 2))
+            TypeAnnotation::NumberLiteral(NumberStructure::Number(_), span!(0, 2))
         );
-        assert_matches_ast!("true", TypeReference::BooleanLiteral(true, span!(0, 4)));
+        assert_matches_ast!("true", TypeAnnotation::BooleanLiteral(true, span!(0, 4)));
     }
 
     #[test]
     fn generics() {
         assert_matches_ast!(
             "Array<string>",
-            TypeReference::NameWithGenericArguments(
+            TypeAnnotation::NameWithGenericArguments(
                 Deref @ "Array",
-                Deref @ [TypeReference::Name(Deref @ "string", span!(6, 12))],
+                Deref @ [TypeAnnotation::Name(Deref @ "string", span!(6, 12))],
                 span!(0, 13),
             )
         );
 
         assert_matches_ast!(
             "Map<string, number>",
-            TypeReference::NameWithGenericArguments(
+            TypeAnnotation::NameWithGenericArguments(
                 Deref @ "Map",
                 Deref @
-                [TypeReference::Name(Deref @ "string", span!(4, 10)), TypeReference::Name(Deref @ "number", span!(12, 18))],
+                [TypeAnnotation::Name(Deref @ "string", span!(4, 10)), TypeAnnotation::Name(Deref @ "number", span!(12, 18))],
                 span!(0, 19),
             )
         );
 
         assert_matches_ast!(
             "Array<Array<string>>",
-            TypeReference::NameWithGenericArguments(
+            TypeAnnotation::NameWithGenericArguments(
                 Deref @ "Array",
-                Deref @ [TypeReference::NameWithGenericArguments(
+                Deref @ [TypeAnnotation::NameWithGenericArguments(
                     Deref @ "Array",
-                    Deref @ [TypeReference::Name(Deref @ "string", span!(12, 18))],
+                    Deref @ [TypeAnnotation::Name(Deref @ "string", span!(12, 18))],
                     span!(6, 19),
                 )],
                 span!(0, 20),
@@ -1103,9 +1085,9 @@ mod tests {
     fn union() {
         assert_matches_ast!(
             "string | number",
-            TypeReference::Union(
+            TypeAnnotation::Union(
                 Deref @
-                [TypeReference::Name(Deref @ "string", span!(0, 6)), TypeReference::Name(Deref @ "number", span!(9, 15))],
+                [TypeAnnotation::Name(Deref @ "string", span!(0, 6)), TypeAnnotation::Name(Deref @ "number", span!(9, 15))],
             )
         )
     }
@@ -1114,9 +1096,9 @@ mod tests {
     fn intersection() {
         assert_matches_ast!(
             "string & number",
-            TypeReference::Intersection(
+            TypeAnnotation::Intersection(
                 Deref @
-                [TypeReference::Name(Deref @ "string", span!(0, 6)), TypeReference::Name(Deref @ "number", span!(9, 15))],
+                [TypeAnnotation::Name(Deref @ "string", span!(0, 6)), TypeAnnotation::Name(Deref @ "number", span!(9, 15))],
             )
         )
     }
@@ -1125,15 +1107,14 @@ mod tests {
     fn tuple_literal() {
         assert_matches_ast!(
             "[number, x: string]",
-            TypeReference::TupleLiteral(
+            TypeAnnotation::TupleLiteral(
                 Deref @ [TupleElement::NonSpread {
                     name: None,
-                    ty: TypeReference::Name(Deref @ "number", span!(1, 7)),
+                    ty: TypeAnnotation::Name(Deref @ "number", span!(1, 7)),
                 }, TupleElement::NonSpread {
                     name: Some(Deref @ "x"),
-                    ty: TypeReference::Name(Deref @ "string", span!(12, 18)),
+                    ty: TypeAnnotation::Name(Deref @ "string", span!(12, 18)),
                 }],
-                _,
                 span!(0, 19),
             )
         );
@@ -1143,13 +1124,13 @@ mod tests {
     fn functions() {
         assert_matches_ast!(
             "T => T",
-            TypeReference::FunctionLiteral {
+            TypeAnnotation::FunctionLiteral {
                 type_parameters: None,
-                parameters: TypeReferenceFunctionParameters {
-                    parameters: Deref @ [ TypeReferenceFunctionParameter { .. } ],
+                parameters: TypeAnnotationFunctionParameters {
+                    parameters: Deref @ [ TypeAnnotationFunctionParameter { .. } ],
                     ..
                 },
-                return_type: Deref @ TypeReference::Name(Deref @ "T", span!(5, 6)),
+                return_type: Deref @ TypeAnnotation::Name(Deref @ "T", span!(5, 6)),
                 ..
             }
         );
@@ -1160,10 +1141,10 @@ mod tests {
     fn template_literal() {
         assert_matches_ast!(
             "`test-${X}`",
-            TypeReference::TemplateLiteral(
+            TypeAnnotation::TemplateLiteral(
                 Deref
                 @ [TemplateLiteralPart::Static(Deref @ "test-"), TemplateLiteralPart::Dynamic(
-                    Deref @ TypeReference::Name(Deref @ "X", span!(8, 9)),
+                    Deref @ TypeAnnotation::Name(Deref @ "X", span!(8, 9)),
                 )],
                 _,
             )
@@ -1174,18 +1155,18 @@ mod tests {
     fn array_shorthand() {
         assert_matches_ast!(
             "string[]",
-            TypeReference::ArrayLiteral(
-                Deref @ TypeReference::Name(Deref @ "string", span!(0, 6)),
+            TypeAnnotation::ArrayLiteral(
+                Deref @ TypeAnnotation::Name(Deref @ "string", span!(0, 6)),
                 span!(0, 8),
             )
         );
         assert_matches_ast!(
             "(number | null)[]",
-            TypeReference::ArrayLiteral(
-                Deref @ TypeReference::ParenthesizedReference(
-                    Deref @ TypeReference::Union(
+            TypeAnnotation::ArrayLiteral(
+                Deref @ TypeAnnotation::ParenthesizedReference(
+                    Deref @ TypeAnnotation::Union(
                         Deref @
-                        [TypeReference::Name(Deref @ "number", span!(1, 7)), TypeReference::Name(Deref @ "null", span!(10, 14))],
+                        [TypeAnnotation::Name(Deref @ "number", span!(1, 7)), TypeAnnotation::Name(Deref @ "null", span!(10, 14))],
                     ),
                     span!(0, 15),
                 ),
@@ -1194,9 +1175,9 @@ mod tests {
         );
         assert_matches_ast!(
             "string[][]",
-            TypeReference::ArrayLiteral(
-                Deref @ TypeReference::ArrayLiteral(
-                    Deref @ TypeReference::Name(Deref @ "string", span!(0, 6)),
+            TypeAnnotation::ArrayLiteral(
+                Deref @ TypeAnnotation::ArrayLiteral(
+                    Deref @ TypeAnnotation::Name(Deref @ "string", span!(0, 6)),
                     span!(0, 8),
                 ),
                 span!(0, 10),

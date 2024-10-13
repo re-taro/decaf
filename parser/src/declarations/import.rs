@@ -10,7 +10,7 @@ use tokenizer_lib::{Token, TokenReader};
 
 use crate::{
     errors::parse_lexing_error, parse_bracketed, tokens::token_as_identifier, ASTNode, ParseError,
-    ParseErrors, ParseResult, ParseSettings, TSXKeyword, TSXToken, VariableId, VariableIdentifier,
+    ParseErrors, ParseOptions, ParseResult, TSXKeyword, TSXToken, VariableIdentifier,
 };
 use visitable_derive::Visitable;
 
@@ -55,7 +55,7 @@ impl ASTNode for ImportDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start_position = reader.expect_next(TSXToken::Keyword(TSXKeyword::Import))?;
         let only_type: bool = reader
@@ -135,7 +135,7 @@ impl ASTNode for ImportDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        _settings: &crate::ToStringSettings,
+        _settings: &crate::ToStringOptions,
         _depth: u8,
     ) {
         buf.push_str("import ");
@@ -183,7 +183,6 @@ pub enum ImportPart {
     NameWithAlias {
         name: String,
         alias: String,
-        variable_id: VariableId,
         position: Span,
     },
 }
@@ -199,7 +198,7 @@ impl ASTNode for ImportPart {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         _state: &mut crate::ParsingState,
-        _settings: &ParseSettings,
+        _settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let (name, pos) = token_as_identifier(
             reader.next().ok_or_else(parse_lexing_error)?,
@@ -216,21 +215,16 @@ impl ASTNode for ImportPart {
                 name,
                 alias,
                 position,
-                variable_id: VariableId::new(),
             })
         } else {
-            Ok(Self::Name(VariableIdentifier::Standard(
-                name,
-                VariableId::new(),
-                pos,
-            )))
+            Ok(Self::Name(VariableIdentifier::Standard(name, pos)))
         }
     }
 
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        _settings: &crate::ToStringSettings,
+        _settings: &crate::ToStringOptions,
         _depth: u8,
     ) {
         match self {

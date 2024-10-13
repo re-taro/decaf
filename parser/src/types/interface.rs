@@ -2,19 +2,19 @@ use std::borrow::Cow;
 
 use crate::{
     errors::parse_lexing_error,
-    expressions::ExpressionId,
     extensions::decorators::Decorated,
     parse_bracketed, to_string_bracketed,
     tokens::token_as_identifier,
     tsx_keywords,
-    types::{type_declarations::*, type_references::TypeReferenceFunctionParameters},
-    ASTNode, Block, Expression, GenericTypeConstraint, Keyword, NumberStructure, ParseError,
-    ParseErrors, ParseResult, ParseSettings, PropertyId, PropertyKey, Span, TSXKeyword, TSXToken,
-    TypeId, TypeReference,
+    types::{type_annotations::TypeAnnotationFunctionParameters, type_declarations::*},
+    ASTNode, Expression, GenericTypeConstraint, Keyword, NumberStructure, ParseError, ParseErrors,
+    ParseOptions, ParseResult, PropertyKey, Span, TSXKeyword, TSXToken, TypeAnnotation,
 };
 
 use iterator_endiate::EndiateIteratorExt;
 use tokenizer_lib::{Token, TokenReader};
+
+use super::AnnotationPerforms;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
@@ -25,10 +25,9 @@ pub struct InterfaceDeclaration {
     pub name: String,
     #[cfg(feature = "extras")]
     pub nominal_keyword: Option<Keyword<tsx_keywords::Nominal>>,
-    pub type_id: TypeId,
     pub type_parameters: Option<Vec<GenericTypeConstraint>>,
     /// The document interface extends a multiple of other interfaces
-    pub extends: Option<Vec<TypeReference>>,
+    pub extends: Option<Vec<TypeAnnotation>>,
     pub members: Vec<Decorated<InterfaceMember>>,
     pub position: Span,
 }
@@ -60,7 +59,7 @@ impl ASTNode for InterfaceDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start = reader.expect_next(TSXToken::Keyword(TSXKeyword::Interface))?;
 
@@ -76,19 +75,21 @@ impl ASTNode for InterfaceDeclaration {
             type_parameters,
             ..
         } = TypeDeclaration::from_reader(reader, state, settings)?;
-        let extends = if let TSXToken::Keyword(TSXKeyword::Extends) = reader.peek().unwrap().0 {
+
+        let extends = if let Some(Token(TSXToken::Keyword(TSXKeyword::Extends), _)) = reader.peek()
+        {
             reader.next();
-            let type_reference = TypeReference::from_reader(reader, state, settings)?;
-            let mut extends = vec![type_reference];
-            if matches!(reader.peek().unwrap().0, TSXToken::Comma) {
+            let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+            let mut extends = vec![type_annotation];
+            if matches!(reader.peek(), Some(Token(TSXToken::Comma, _))) {
                 reader.next();
                 loop {
-                    extends.push(TypeReference::from_reader(reader, state, settings)?);
-                    match reader.peek().unwrap().0 {
-                        TSXToken::Comma => {
+                    extends.push(TypeAnnotation::from_reader(reader, state, settings)?);
+                    match reader.peek() {
+                        Some(Token(TSXToken::Comma, _)) => {
                             reader.next();
                         }
-                        TSXToken::OpenBrace => break,
+                        Some(Token(TSXToken::OpenBrace, _)) => break,
                         _ => unimplemented!(),
                     }
                 }
@@ -97,6 +98,7 @@ impl ASTNode for InterfaceDeclaration {
         } else {
             None
         };
+
         reader.expect_next(TSXToken::OpenBrace)?;
         let members = parse_interface_members(reader, state, settings)?;
         let position = start.union(&reader.expect_next(TSXToken::CloseBrace)?);
@@ -104,7 +106,6 @@ impl ASTNode for InterfaceDeclaration {
             nominal_keyword,
             name,
             members,
-            type_id: TypeId::new(),
             type_parameters,
             extends,
             position,
@@ -114,7 +115,7 @@ impl ASTNode for InterfaceDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if settings.include_types {
@@ -138,7 +139,7 @@ impl ASTNode for InterfaceDeclaration {
                 buf.push_new_line();
             }
             for member in self.members.iter() {
-                settings.add_indent(depth, buf);
+                settings.add_indent(depth + 1, buf);
                 member.to_string_from_buffer(buf, settings, depth + 1);
                 if settings.pretty {
                     buf.push_new_line();
@@ -153,61 +154,7 @@ impl ASTNode for InterfaceDeclaration {
     }
 }
 
-#[cfg(feature = "extras")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
-pub struct InterfaceMemberBody {
-    pub performs_keyword: Keyword<tsx_keywords::Performs>,
-    pub condition: Option<Box<crate::Expression>>,
-    pub body: Block,
-}
-
-#[cfg(feature = "extras")]
-impl ASTNode for InterfaceMemberBody {
-    fn get_position(&self) -> Cow<Span> {
-        todo!()
-    }
-
-    fn from_reader(
-        reader: &mut impl TokenReader<TSXToken, Span>,
-        state: &mut crate::ParsingState,
-        settings: &ParseSettings,
-    ) -> ParseResult<Self> {
-        let performs_keyword =
-            Keyword::new(reader.expect_next(TSXToken::Keyword(TSXKeyword::Performs))?);
-        let next_is_open_paren =
-            reader.conditional_next(|tok| matches!(tok, TSXToken::OpenParentheses));
-        let condition = if next_is_open_paren.is_some() {
-            let expression = Expression::from_reader(reader, state, settings)?;
-            reader.expect_next(TSXToken::CloseParentheses)?;
-            Some(Box::new(expression))
-        } else {
-            None
-        };
-
-        let body = Block::from_reader(reader, state, settings)?;
-
-        Ok(InterfaceMemberBody {
-            performs_keyword,
-            condition,
-            body,
-        })
-    }
-
-    fn to_string_from_buffer<T: source_map::ToString>(
-        &self,
-        _buf: &mut T,
-        _settings: &crate::ToStringSettings,
-        _depth: u8,
-    ) {
-        todo!()
-    }
-}
-
-/// This is also used for [TypeReference::ObjectLiteral]
+/// This is also used for [TypeAnnotation::ObjectLiteral]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "self-rust-tokenize",
@@ -217,16 +164,16 @@ pub enum InterfaceMember {
     Method {
         name: PropertyKey,
         type_parameters: Option<Vec<GenericTypeConstraint>>,
-        parameters: TypeReferenceFunctionParameters,
-        return_type: Option<TypeReference>,
+        parameters: TypeAnnotationFunctionParameters,
+        return_type: Option<TypeAnnotation>,
         is_optional: bool,
         #[cfg(feature = "extras")]
-        body: Option<InterfaceMemberBody>,
+        performs: Option<AnnotationPerforms>,
         position: Span,
     },
     Property {
         name: PropertyKey,
-        type_reference: TypeReference,
+        type_annotation: TypeAnnotation,
         is_readonly: bool,
         /// Marked with `?:`
         is_optional: bool,
@@ -234,8 +181,8 @@ pub enum InterfaceMember {
     },
     Indexer {
         name: String,
-        indexer_type: TypeReference,
-        return_type: TypeReference,
+        indexer_type: TypeAnnotation,
+        return_type: TypeAnnotation,
         is_readonly: bool,
         position: Span,
     },
@@ -244,16 +191,16 @@ pub enum InterfaceMember {
     /// new (...params: any[]): HTMLElement
     /// ```
     Constructor {
-        parameters: TypeReferenceFunctionParameters,
+        parameters: TypeAnnotationFunctionParameters,
         type_parameters: Option<Vec<GenericTypeConstraint>>,
-        return_type: Option<TypeReference>,
+        return_type: Option<TypeAnnotation>,
         is_readonly: bool,
         position: Span,
     },
     Caller {
-        parameters: TypeReferenceFunctionParameters,
+        parameters: TypeAnnotationFunctionParameters,
         type_parameters: Option<Vec<GenericTypeConstraint>>,
-        return_type: Option<TypeReference>,
+        return_type: Option<TypeAnnotation>,
         is_readonly: bool,
         position: Span,
     },
@@ -261,10 +208,10 @@ pub enum InterfaceMember {
     Rule {
         parameter: String,
         rule: TypeRule,
-        matching_type: Box<TypeReference>,
+        matching_type: Box<TypeAnnotation>,
         optionality: Optionality,
         is_readonly: bool,
-        output_type: Box<TypeReference>,
+        output_type: Box<TypeAnnotation>,
         position: Span,
     },
     Comment(String),
@@ -274,7 +221,7 @@ impl ASTNode for InterfaceMember {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let readonly_pos = reader
             .conditional_next(|tok| matches!(tok, TSXToken::Keyword(TSXKeyword::Readonly)))
@@ -290,14 +237,12 @@ impl ASTNode for InterfaceMember {
                 let Token(_, start_pos) = reader.next().unwrap();
                 let (name, end_pos) = match reader.next().ok_or_else(parse_lexing_error)? {
                     Token(TSXToken::SingleQuotedStringLiteral(name), pos)
-                    | Token(TSXToken::DoubleQuotedStringLiteral(name), pos) => (
-                        PropertyKey::StringLiteral(name, PropertyId::new(), pos.clone()),
-                        pos,
-                    ),
+                    | Token(TSXToken::DoubleQuotedStringLiteral(name), pos) => {
+                        (PropertyKey::StringLiteral(name, pos.clone()), pos)
+                    }
                     Token(TSXToken::NumberLiteral(value), pos) => (
                         PropertyKey::NumberLiteral(
                             value.parse::<NumberStructure>().unwrap(),
-                            PropertyId::new(),
                             pos.clone(),
                         ),
                         pos,
@@ -308,8 +253,7 @@ impl ASTNode for InterfaceMember {
 
                         // Catch for computed symbol: e.g. `[Symbol.instanceOf()]`, rather than indexer
                         if let Some(Token(TSXToken::Dot, _)) = reader.peek() {
-                            let top =
-                                Expression::VariableReference(name, name_pos, ExpressionId::new());
+                            let top = Expression::VariableReference(name, name_pos);
                             // TODO bad
                             let expression = Expression::from_reader_sub_first_expression(
                                 reader, state, settings, 0, top,
@@ -318,7 +262,6 @@ impl ASTNode for InterfaceMember {
                             (
                                 PropertyKey::Computed(
                                     Box::new(expression),
-                                    PropertyId::new(),
                                     start_pos.union(&end_pos),
                                 ),
                                 end_pos,
@@ -328,11 +271,11 @@ impl ASTNode for InterfaceMember {
                                 // Indexed type
                                 Token(TSXToken::Colon, _) => {
                                     let indexer_type =
-                                        TypeReference::from_reader(reader, state, settings)?;
+                                        TypeAnnotation::from_reader(reader, state, settings)?;
                                     reader.expect_next(TSXToken::CloseBracket)?;
                                     reader.expect_next(TSXToken::Colon)?;
                                     let return_type =
-                                        TypeReference::from_reader(reader, state, settings)?;
+                                        TypeAnnotation::from_reader(reader, state, settings)?;
                                     return Ok(InterfaceMember::Indexer {
                                         name,
                                         indexer_type,
@@ -354,7 +297,7 @@ impl ASTNode for InterfaceMember {
                                         TypeRule::In
                                     };
                                     let matching_type =
-                                        TypeReference::from_reader(reader, state, settings)?;
+                                        TypeAnnotation::from_reader(reader, state, settings)?;
                                     reader.expect_next(TSXToken::CloseBracket)?;
                                     // TODO the -?: ?: : stuff '-?:' should be a token
                                     let token = reader.next().ok_or_else(parse_lexing_error)?;
@@ -379,7 +322,7 @@ impl ASTNode for InterfaceMember {
                                         }
                                     };
                                     let output_type =
-                                        TypeReference::from_reader(reader, state, settings)?;
+                                        TypeAnnotation::from_reader(reader, state, settings)?;
                                     let position = readonly_pos
                                         .unwrap_or(name_pos)
                                         .union(&output_type.get_position());
@@ -414,11 +357,11 @@ impl ASTNode for InterfaceMember {
             // Calling self
             TSXToken::OpenParentheses => {
                 let parameters =
-                    TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+                    TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
                 // let parameters = function_parameters_from_reader(reader, state, settings)?;
                 let return_type = if let Some(Token(TSXToken::Colon, _)) = reader.peek() {
                     reader.next();
-                    Some(TypeReference::from_reader(reader, state, settings)?)
+                    Some(TypeAnnotation::from_reader(reader, state, settings)?)
                 } else {
                     None
                 };
@@ -442,10 +385,10 @@ impl ASTNode for InterfaceMember {
                 let (type_parameters, start_pos) =
                     parse_bracketed(reader, state, settings, None, TSXToken::CloseChevron)?;
                 let parameters =
-                    TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+                    TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
                 let return_type = if let Some(Token(TSXToken::Colon, _)) = reader.peek() {
                     reader.next();
-                    Some(TypeReference::from_reader(reader, state, settings)?)
+                    Some(TypeAnnotation::from_reader(reader, state, settings)?)
                 } else {
                     None
                 };
@@ -474,12 +417,12 @@ impl ASTNode for InterfaceMember {
                     None
                 };
                 let parameters =
-                    TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+                    TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
                 let return_type = if reader
                     .conditional_next(|token| *token == TSXToken::Colon)
                     .is_some()
                 {
-                    Some(TypeReference::from_reader(reader, state, settings)?)
+                    Some(TypeAnnotation::from_reader(reader, state, settings)?)
                 } else {
                     None
                 };
@@ -513,7 +456,7 @@ impl ASTNode for InterfaceMember {
                 | TSXToken::DoubleQuotedStringLiteral(name) = token
                 {
                     (
-                        PropertyKey::StringLiteral(name, PropertyId::new(), position.clone()),
+                        PropertyKey::StringLiteral(name, position.clone()),
                         None,
                         position,
                     )
@@ -528,7 +471,7 @@ impl ASTNode for InterfaceMember {
                     position,
                 } = TypeDeclaration::from_reader(reader, state, settings)?;
                 (
-                    PropertyKey::Ident(name, PropertyId::new(), position.clone()),
+                    PropertyKey::Ident(name, position.clone()),
                     type_parameters,
                     position,
                 )
@@ -540,26 +483,27 @@ impl ASTNode for InterfaceMember {
         // TODO a little weird as only functions can have type parameters:
         match reader.next().ok_or_else(parse_lexing_error)? {
             Token(TSXToken::OpenParentheses, start_pos) => {
-                let parameters = TypeReferenceFunctionParameters::from_reader_sub_open_parenthesis(
-                    reader, state, settings, start_pos,
-                )?;
+                let parameters =
+                    TypeAnnotationFunctionParameters::from_reader_sub_open_parenthesis(
+                        reader, state, settings, start_pos,
+                    )?;
                 position = position.union(&parameters.position);
                 let return_type = if reader
                     .conditional_next(|tok| matches!(tok, TSXToken::Colon))
                     .is_some()
                 {
-                    let type_reference = TypeReference::from_reader(reader, state, settings)?;
-                    position = position.union(&type_reference.get_position());
-                    Some(type_reference)
+                    let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+                    position = position.union(&type_annotation.get_position());
+                    Some(type_annotation)
                 } else {
                     None
                 };
 
                 #[cfg(feature = "extras")]
-                let body = if let Some(Token(TSXToken::Keyword(TSXKeyword::Performs), _)) =
+                let performs = if let Some(Token(TSXToken::Keyword(TSXKeyword::Performs), _)) =
                     reader.peek()
                 {
-                    Some(InterfaceMemberBody::from_reader(reader, state, settings)?)
+                    Some(AnnotationPerforms::from_reader(reader, state, settings)?)
                 } else {
                     None
                 };
@@ -572,14 +516,14 @@ impl ASTNode for InterfaceMember {
                     is_optional: false,
                     position,
                     #[cfg(feature = "extras")]
-                    body,
+                    performs,
                 })
             }
             Token(TSXToken::QuestionMark, _) => {
                 // TODO this is a little weird, I don't think '?(' is a actual token and is
                 // only used here. Making '?(' a token may break ternary where first expr is a group
                 let parameters =
-                    TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+                    TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
 
                 position = position.union(&parameters.position);
 
@@ -587,18 +531,18 @@ impl ASTNode for InterfaceMember {
                     .conditional_next(|tok| matches!(tok, TSXToken::Colon))
                     .is_some()
                 {
-                    let type_reference = TypeReference::from_reader(reader, state, settings)?;
-                    position = position.union(&type_reference.get_position());
-                    Some(type_reference)
+                    let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+                    position = position.union(&type_annotation.get_position());
+                    Some(type_annotation)
                 } else {
                     None
                 };
 
                 #[cfg(feature = "extras")]
-                let body = if let Some(Token(TSXToken::Keyword(TSXKeyword::Performs), _)) =
+                let performs = if let Some(Token(TSXToken::Keyword(TSXKeyword::Performs), _)) =
                     reader.peek()
                 {
-                    Some(InterfaceMemberBody::from_reader(reader, state, settings)?)
+                    Some(AnnotationPerforms::from_reader(reader, state, settings)?)
                 } else {
                     None
                 };
@@ -611,31 +555,31 @@ impl ASTNode for InterfaceMember {
                     position,
                     return_type,
                     #[cfg(feature = "extras")]
-                    body,
+                    performs,
                 })
             }
             Token(TSXToken::Colon, _) => {
-                let mut type_reference = TypeReference::from_reader(reader, state, settings)?;
+                let mut type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
                 if is_readonly {
                     // TODO positioning:
-                    position = position.union(&type_reference.get_position());
-                    type_reference =
-                        TypeReference::Readonly(Box::new(type_reference), position.clone());
+                    position = position.union(&type_annotation.get_position());
+                    type_annotation =
+                        TypeAnnotation::Readonly(Box::new(type_annotation), position.clone());
                 }
                 Ok(InterfaceMember::Property {
                     name,
                     position,
-                    type_reference,
+                    type_annotation,
                     is_optional: false,
                     is_readonly,
                 })
             }
             Token(TSXToken::OptionalMember, _) => {
-                let type_reference = TypeReference::from_reader(reader, state, settings)?;
-                let position = position.union(&type_reference.get_position());
+                let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+                let position = position.union(&type_annotation.get_position());
                 Ok(InterfaceMember::Property {
                     name,
-                    type_reference,
+                    type_annotation,
                     is_optional: true,
                     is_readonly,
                     position,
@@ -659,13 +603,13 @@ impl ASTNode for InterfaceMember {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {
             Self::Property {
                 name,
-                type_reference,
+                type_annotation,
                 is_readonly,
                 ..
             } => {
@@ -675,7 +619,7 @@ impl ASTNode for InterfaceMember {
                 name.to_string_from_buffer(buf, settings, depth);
                 buf.push(':');
                 settings.add_gap(buf);
-                type_reference.to_string_from_buffer(buf, settings, depth);
+                type_annotation.to_string_from_buffer(buf, settings, depth);
             }
             Self::Method {
                 name,
@@ -738,7 +682,7 @@ impl ASTNode for InterfaceMember {
 pub(crate) fn parse_interface_members(
     reader: &mut impl TokenReader<TSXToken, Span>,
     state: &mut crate::ParsingState,
-    settings: &ParseSettings,
+    settings: &ParseOptions,
 ) -> ParseResult<Vec<Decorated<InterfaceMember>>> {
     let mut members = Vec::new();
     loop {

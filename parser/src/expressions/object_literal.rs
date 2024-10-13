@@ -3,11 +3,10 @@ use iterator_endiate::EndiateIteratorExt;
 use std::{borrow::Cow, fmt::Debug, mem};
 use visitable_derive::Visitable;
 
-use super::ExpressionId;
 use crate::{
-    errors::parse_lexing_error, functions::FunctionBased, property_key::PropertyId, ASTNode, Block,
-    Expression, FunctionBase, GetSetGeneratorOrNone, ParseError, ParseErrors, ParseResult,
-    ParseSettings, PropertyKey, Span, TSXToken, Token, TokenReader, WithComment,
+    errors::parse_lexing_error, functions::FunctionBased, ASTNode, Block, Expression, FunctionBase,
+    GetSetGeneratorOrNone, ParseError, ParseErrors, ParseOptions, ParseResult, PropertyKey, Span,
+    TSXToken, Token, TokenReader, WithComment,
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Visitable)]
@@ -18,7 +17,6 @@ use crate::{
 pub struct ObjectLiteral {
     pub members: Vec<ObjectLiteralMember>,
     pub position: Span,
-    pub expression_id: ExpressionId,
 }
 
 #[derive(Debug, Clone, PartialEqExtras)]
@@ -29,7 +27,7 @@ pub struct ObjectLiteral {
 )]
 pub enum ObjectLiteralMember {
     SpreadExpression(Expression, Span),
-    Shorthand(String, Span, ExpressionId, PropertyId),
+    Shorthand(String, Span),
     Property(WithComment<PropertyKey>, Expression, Span),
     Method(ObjectLiteralMethod),
 }
@@ -44,7 +42,7 @@ impl crate::Visitable for ObjectLiteralMember {
     ) {
         match self {
             ObjectLiteralMember::SpreadExpression(_, _) => {}
-            ObjectLiteralMember::Shorthand(_, _, _, _) => {}
+            ObjectLiteralMember::Shorthand(_, _) => {}
             ObjectLiteralMember::Property(_, _, _) => {}
             ObjectLiteralMember::Method(method) => method.visit(visitors, data, settings, chain),
         }
@@ -59,7 +57,7 @@ impl crate::Visitable for ObjectLiteralMember {
     ) {
         match self {
             ObjectLiteralMember::SpreadExpression(_, _) => {}
-            ObjectLiteralMember::Shorthand(_, _, _, _) => {}
+            ObjectLiteralMember::Shorthand(_, _) => {}
             ObjectLiteralMember::Property(_, _, _) => {}
             ObjectLiteralMember::Method(method) => {
                 method.visit_mut(visitors, data, settings, chain)
@@ -77,14 +75,14 @@ impl FunctionBased for ObjectLiteralMethodBase {
     type Name = WithComment<PropertyKey>;
     type Body = Block;
 
-    fn get_chain_variable(_this: &FunctionBase<Self>) -> crate::ChainVariable {
-        crate::ChainVariable::UnderObjectLiteralMethod
-    }
+    // fn get_chain_variable(_this: &FunctionBase<Self>) -> crate::ChainVariable {
+    // 	crate::ChainVariable::UnderObjectLiteralMethod
+    // }
 
     fn header_and_name_from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<(Self::Header, Self::Name)> {
         Ok((
             GetSetGeneratorOrNone::from_reader(reader),
@@ -96,7 +94,7 @@ impl FunctionBased for ObjectLiteralMethodBase {
         buf: &mut T,
         header: &Self::Header,
         name: &Self::Name,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         header.to_string_from_buffer(buf);
@@ -118,7 +116,7 @@ impl ASTNode for ObjectLiteral {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start = reader.expect_next(TSXToken::OpenBrace)?;
         Self::from_reader_sub_open_curly(reader, state, settings, start)
@@ -127,7 +125,7 @@ impl ASTNode for ObjectLiteral {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         buf.push('{');
@@ -148,7 +146,7 @@ impl ObjectLiteral {
     pub(crate) fn from_reader_sub_open_curly(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         start_span: Span,
     ) -> ParseResult<Self> {
         let mut members: Vec<ObjectLiteralMember> = Vec::new();
@@ -167,12 +165,7 @@ impl ObjectLiteral {
         Ok(ObjectLiteral {
             members,
             position: start_span.union(&end_span),
-            expression_id: ExpressionId::new(),
         })
-    }
-
-    pub fn get_expression_id(&self) -> ExpressionId {
-        self.expression_id
     }
 }
 
@@ -180,7 +173,7 @@ impl ASTNode for ObjectLiteralMember {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         // TODO this probably needs with comment here:
         let mut get_set_generator_or_none = GetSetGeneratorOrNone::from_reader(reader);
@@ -199,11 +192,7 @@ impl ASTNode for ObjectLiteralMember {
                 GetSetGeneratorOrNone::Set(kw) => ("set", kw.1),
                 _ => unreachable!(),
             };
-            WithComment::None(PropertyKey::Ident(
-                name.to_owned(),
-                PropertyId::new(),
-                position,
-            ))
+            WithComment::None(PropertyKey::Ident(name.to_owned(), position))
         } else {
             WithComment::<PropertyKey>::from_reader(reader, state, settings)?
         };
@@ -237,13 +226,8 @@ impl ASTNode for ObjectLiteralMember {
                     Some(Token(TSXToken::Comma | TSXToken::CloseBrace, _))
                 ) {
                     // TODO fix
-                    if let PropertyKey::Ident(name, _, position) = key.unwrap_ast() {
-                        Ok(Self::Shorthand(
-                            name,
-                            position,
-                            ExpressionId::new(),
-                            PropertyId::new(),
-                        ))
+                    if let PropertyKey::Ident(name, position) = key.unwrap_ast() {
+                        Ok(Self::Shorthand(name, position))
                     } else {
                         todo!()
                     }
@@ -260,7 +244,7 @@ impl ASTNode for ObjectLiteralMember {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {
@@ -286,7 +270,7 @@ impl ASTNode for ObjectLiteralMember {
     fn get_position(&self) -> Cow<Span> {
         match self {
             Self::Method(..) => todo!(),
-            Self::Shorthand(_, pos, _, _)
+            Self::Shorthand(_, pos)
             | Self::Property(_, _, pos)
             | Self::SpreadExpression(_, pos) => Cow::Borrowed(pos),
         }

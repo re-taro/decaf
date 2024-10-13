@@ -27,7 +27,7 @@ pub(crate) fn emit_decaf_diagnostic(
     error: crate::error_handling::TempDiagnostic,
 ) -> Result<(), codespan_reporting::files::Error> {
     let reason = error.label;
-    let id = error.position.source_id;
+    let id = error.position.source;
     let range = std::ops::Range::from(error.position);
 
     let diagnostic = Diagnostic {

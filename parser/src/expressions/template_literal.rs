@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    errors::parse_lexing_error, ASTNode, Expression, ParseResult, ParseSettings, Span, TSXToken,
+    errors::parse_lexing_error, ASTNode, Expression, ParseOptions, ParseResult, Span, TSXToken,
     Token, TokenReader,
 };
 use visitable_derive::Visitable;
@@ -15,7 +15,6 @@ pub struct TemplateLiteral {
     pub tag: Option<Box<Expression>>,
     pub parts: Vec<TemplateLiteralPart<Expression>>,
     pub position: Span,
-    pub expression_id: super::ExpressionId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +80,7 @@ impl ASTNode for TemplateLiteral {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start_pos = reader.expect_next(TSXToken::TemplateLiteralStart)?;
         Self::from_reader_sub_start_with_tag(reader, state, settings, None, start_pos)
@@ -90,7 +89,7 @@ impl ASTNode for TemplateLiteral {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if let Some(tag) = &self.tag {
@@ -117,7 +116,7 @@ impl TemplateLiteral {
     pub(crate) fn from_reader_sub_start_with_tag(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         tag: Option<Box<Expression>>,
         start_position: Span,
     ) -> ParseResult<Self> {
@@ -137,7 +136,6 @@ impl TemplateLiteral {
                         parts,
                         tag,
                         position: start_position.union(&end_position),
-                        expression_id: super::ExpressionId::new(),
                     });
                 }
                 _ => unreachable!(),

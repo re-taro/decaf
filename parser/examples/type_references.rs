@@ -1,7 +1,7 @@
-use decaf_parser::{ASTNode, Expression, SourceId, TypeReference};
+use decaf_parser::{ASTNode, Expression, SourceId, TypeAnnotation};
 
 fn main() {
-    let reference = TypeReference::from_string(
+    let reference = TypeAnnotation::from_string(
         "Pair<Nested<Object<2>>, Array<number>>".into(),
         Default::default(),
         SourceId::NULL,

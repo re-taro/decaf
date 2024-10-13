@@ -28,7 +28,7 @@ impl ASTNode for EnumDeclaration {
     fn from_reader(
         reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseSettings,
+        settings: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
         let const_pos = reader
             .conditional_next(|tok| matches!(tok, TSXToken::Keyword(TSXKeyword::Const)))
@@ -62,7 +62,7 @@ impl ASTNode for EnumDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if self.is_constant {
@@ -112,7 +112,7 @@ impl ASTNode for EnumMember {
     fn from_reader(
         reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseSettings,
+        settings: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
         let (name, start_pos) = token_as_identifier(
             reader.next().ok_or_else(parse_lexing_error)?,
@@ -139,7 +139,7 @@ impl ASTNode for EnumMember {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {

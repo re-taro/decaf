@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf};
 
 use argh::FromArgs;
 use enum_variants_strings::EnumVariantsStrings;
-use parser::{ASTNode, Expression, Module, SourceId, ToStringSettings};
+use parser::{ASTNode, Expression, Module, SourceId, ToStringOptions};
 
 use crate::{error_handling::emit_parser_error, utilities::print_to_cli};
 
@@ -135,9 +135,9 @@ impl ExplorerSubCommand {
                 match res {
                     Ok(module) => {
                         let settings = if matches!(self, ExplorerSubCommand::Prettifier(_)) {
-                            ToStringSettings::default()
+                            ToStringOptions::default()
                         } else {
-                            ToStringSettings::minified()
+                            ToStringOptions::minified()
                         };
                         print_to_cli(format_args!("{}", module.to_string(&settings)));
                     }
