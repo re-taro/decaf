@@ -1,6 +1,6 @@
 #![no_main]
 
-use decaf_parser::{ASTNode, Module, SourceId, ToStringSettings};
+use decaf_parser::{ASTNode, Module, SourceId, ToStringOptions};
 use libfuzzer_sys::{fuzz_target, Corpus};
 use pretty_assertions::assert_eq;
 use std::str;
@@ -21,7 +21,7 @@ fn do_fuzz(data: &str) -> Corpus {
         return Corpus::Reject;
     };
 
-    let output1 = module.to_string(&ToStringSettings::default());
+    let output1 = module.to_string(&ToStringOptions::default());
 
     let Ok(module) = Module::from_string(
         output1.to_owned(),
@@ -33,7 +33,7 @@ fn do_fuzz(data: &str) -> Corpus {
         panic!("input: `{input}`\noutput1: `{output1}`\n\nThis parse should not error because it was just parsed above");
     };
 
-    let output2 = module.to_string(&ToStringSettings::default());
+    let output2 = module.to_string(&ToStringOptions::default());
 
     assert_eq!(output1, output2);
 

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    errors::parse_lexing_error, ASTNode, Expression, Keyword, ParseResult, ParseSettings, Span,
+    errors::parse_lexing_error, ASTNode, Expression, Keyword, ParseOptions, ParseResult, Span,
     StatementPosition, TSXKeyword, TSXToken, Token,
 };
 
@@ -57,7 +57,7 @@ impl ASTNode for ExportDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start = reader.expect_next(TSXToken::Keyword(TSXKeyword::Export))?;
         let is_default = matches!(
@@ -134,7 +134,7 @@ impl ASTNode for ExportDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         match self {

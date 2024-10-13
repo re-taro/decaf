@@ -4,10 +4,12 @@ use tokenizer_lib::Token;
 
 use crate::{
     errors::parse_lexing_error, parse_bracketed, to_string_bracketed, tokens::token_as_identifier,
-    types::type_references::TypeReferenceFunctionParameters, ASTNode, Decorator,
-    GenericTypeConstraint, ParseResult, ParseSettings, Span, TSXKeyword, TSXToken, TokenReader,
-    TypeId, TypeReference, VariableId,
+    types::type_annotations::TypeAnnotationFunctionParameters, ASTNode, Decorator,
+    GenericTypeConstraint, ParseOptions, ParseResult, Span, TSXKeyword, TSXToken, TokenReader,
+    TypeAnnotation,
 };
+
+use super::AnnotationPerforms;
 
 /// A `declare var` thingy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,8 +19,7 @@ use crate::{
 )]
 pub struct DeclareVariableDeclaration {
     pub name: String,
-    pub type_restriction: TypeReference,
-    pub variable_id: VariableId,
+    pub type_restriction: TypeAnnotation,
     pub decorators: Vec<Decorator>,
     pub position: Span,
 }
@@ -31,7 +32,7 @@ impl ASTNode for DeclareVariableDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start_span = reader.expect_next(TSXToken::Keyword(TSXKeyword::Declare))?;
         Self::from_reader_sub_declare(reader, state, settings, Some(start_span), Vec::new())
@@ -40,7 +41,7 @@ impl ASTNode for DeclareVariableDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if settings.include_types {
@@ -57,21 +58,20 @@ impl DeclareVariableDeclaration {
     pub fn from_reader_sub_declare(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         declare_span: Option<Span>,
         decorators: Vec<Decorator>,
     ) -> ParseResult<Self> {
         let var_pos = reader.expect_next(TSXToken::Keyword(TSXKeyword::Var))?;
         let (name, _) = token_as_identifier(reader.next().unwrap(), "declare variable name")?;
         reader.expect_next(TSXToken::Colon)?;
-        let type_restriction = TypeReference::from_reader(reader, state, settings)?;
+        let type_restriction = TypeAnnotation::from_reader(reader, state, settings)?;
         let position = declare_span
             .unwrap_or(var_pos)
             .union(&type_restriction.get_position());
         Ok(Self {
             name,
             type_restriction,
-            variable_id: VariableId::new(),
             position,
             decorators,
         })
@@ -86,9 +86,10 @@ impl DeclareVariableDeclaration {
 pub struct DeclareFunctionDeclaration {
     pub name: String,
     pub type_parameters: Option<Vec<GenericTypeConstraint>>,
-    pub parameters: TypeReferenceFunctionParameters,
-    pub return_type: Option<TypeReference>,
-    pub variable_id: VariableId,
+    pub parameters: TypeAnnotationFunctionParameters,
+    pub return_type: Option<TypeAnnotation>,
+    #[cfg(feature = "extras")]
+    pub performs: Option<AnnotationPerforms>,
     pub decorators: Vec<Decorator>,
     pub position: Span,
 }
@@ -101,7 +102,7 @@ impl ASTNode for DeclareFunctionDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         reader.expect_next(TSXToken::Keyword(TSXKeyword::Declare))?;
         Self::from_reader_sub_declare_with_decorators(reader, state, settings, Vec::new())
@@ -110,7 +111,7 @@ impl ASTNode for DeclareFunctionDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if settings.include_types {
@@ -132,7 +133,7 @@ impl DeclareFunctionDeclaration {
     pub fn from_reader_sub_declare_with_decorators(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         decorators: Vec<Decorator>,
     ) -> ParseResult<Self> {
         let start_pos = reader.expect_next(TSXToken::Keyword(TSXKeyword::Function))?;
@@ -148,28 +149,39 @@ impl DeclareFunctionDeclaration {
         } else {
             None
         };
-        let parameters = TypeReferenceFunctionParameters::from_reader(reader, state, settings)?;
+        let parameters = TypeAnnotationFunctionParameters::from_reader(reader, state, settings)?;
         let return_type = if let Some(Token(TSXToken::Colon, _)) = reader.peek() {
             reader.next();
-            let type_reference = TypeReference::from_reader(reader, state, settings)?;
-            Some(type_reference)
+            let type_annotation = TypeAnnotation::from_reader(reader, state, settings)?;
+            Some(type_annotation)
         } else {
             None
         };
+
+        #[cfg(feature = "extras")]
+        let performs =
+            if let Some(Token(TSXToken::Keyword(TSXKeyword::Performs), _)) = reader.peek() {
+                Some(AnnotationPerforms::from_reader(reader, state, settings)?)
+            } else {
+                None
+            };
+
         let position = start_pos.union(
             &return_type
                 .as_ref()
                 .map(ASTNode::get_position)
                 .unwrap_or(Cow::Borrowed(&parameters.position)),
         );
+
         Ok(Self {
             name,
             type_parameters,
             parameters,
             return_type,
             decorators,
-            variable_id: VariableId::new(),
             position,
+            #[cfg(feature = "extras")]
+            performs,
         })
     }
 }
@@ -178,9 +190,8 @@ impl DeclareFunctionDeclaration {
 pub struct DeclareClassDeclaration {
     pub name: String,
     pub type_parameters: Option<Vec<GenericTypeConstraint>>,
-    pub extends: Option<TypeReference>,
-    pub type_id: TypeId, // TODO:
-                         // members: Vec<DeclareClassMember>
+    pub extends: Option<TypeAnnotation>,
+    // members: Vec<DeclareClassMember>
 }
 
 impl ASTNode for DeclareClassDeclaration {
@@ -191,7 +202,7 @@ impl ASTNode for DeclareClassDeclaration {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         reader.expect_next(TSXToken::Keyword(TSXKeyword::Declare))?;
         Self::from_reader_sub_declare(reader, state, settings)
@@ -200,7 +211,7 @@ impl ASTNode for DeclareClassDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         _buf: &mut T,
-        _settings: &crate::ToStringSettings,
+        _settings: &crate::ToStringOptions,
         _depth: u8,
     ) {
         todo!()
@@ -211,7 +222,7 @@ impl DeclareClassDeclaration {
     pub(crate) fn from_reader_sub_declare(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         reader.expect_next(TSXToken::Keyword(TSXKeyword::Class))?;
         let (name, _) =
@@ -219,7 +230,7 @@ impl DeclareClassDeclaration {
         let extends = if let Some(Token(TSXToken::Keyword(TSXKeyword::Extends), _)) = reader.peek()
         {
             reader.next();
-            Some(TypeReference::from_reader(reader, state, settings)?)
+            Some(TypeAnnotation::from_reader(reader, state, settings)?)
         } else {
             None
         };
@@ -230,7 +241,6 @@ impl DeclareClassDeclaration {
             name,
             extends,
             type_parameters: None,
-            type_id: TypeId::new(),
         })
     }
 }

@@ -44,11 +44,11 @@ pub fn lex_source(
     script: &str,
     sender: &mut impl TokenSender<TSXToken, Span>,
     settings: &LexSettings,
-    source_id: Option<SourceId>,
+    source: Option<SourceId>,
     offset: Option<usize>,
     mut cursors: Vec<(usize, EmptyCursorId)>,
 ) -> Result<(), ParseError> {
-    let source_id = source_id.unwrap_or(SourceId::NULL);
+    let source = source.unwrap_or(SourceId::NULL);
 
     cursors.reverse();
 
@@ -118,8 +118,11 @@ pub fn lex_source(
         // Literals:
         Number {
             literal_type: NumberLiteralType,
-            // For binary, hex, etc `0b0121`
+            /// For binary, hex, etc `0b0121`
             last_character_zero: bool,
+            /// Past and `e` or `E`
+            past_exponential: bool,
+            last_was_underscore: bool,
         },
         String {
             double_quoted: bool,
@@ -173,7 +176,7 @@ pub fn lex_source(
             Span {
                 start: start as u32 + offset as u32,
                 end: start as u32 + offset as u32,
-                source_id,
+                source,
             }
         };
     }
@@ -215,7 +218,7 @@ pub fn lex_source(
                     Span {
                         start: (start + offset) as u32,
                         end: (idx + offset + chr.len_utf8()) as u32,
-                        source_id,
+                        source,
                     },
                 ));
                 if !res {
@@ -229,7 +232,7 @@ pub fn lex_source(
                     Span {
                         start: (start + offset) as u32,
                         end: (idx + offset) as u32,
-                        source_id,
+                        source,
                     },
                 ));
                 if !res {
@@ -243,7 +246,7 @@ pub fn lex_source(
                     Span {
                         start: (start + offset) as u32,
                         end: (idx + offset - $slice.len_utf8()) as u32,
-                        source_id,
+                        source,
                     },
                 ));
                 if !res {
@@ -257,7 +260,7 @@ pub fn lex_source(
                     Span {
                         start: (idx + offset) as u32,
                         end: (idx + offset + chr.len_utf8()) as u32,
-                        source_id,
+                        source,
                     },
                 ));
                 if !res {
@@ -270,13 +273,17 @@ pub fn lex_source(
             LexingState::Number {
                 ref mut literal_type,
                 ref mut last_character_zero,
+                ref mut past_exponential,
+                ref mut last_was_underscore,
             } => {
                 match chr {
                     '0' => {
                         *last_character_zero = true;
+                        *last_was_underscore = false;
                     }
                     '1'..='9' => {
                         *last_character_zero = false;
+                        *last_was_underscore = false;
                     }
                     '.' => {
                         if let NumberLiteralType::Decimal { fractional } = literal_type {
@@ -313,11 +320,17 @@ pub fn lex_source(
                             }
                         }
                     }
-                    'e' => {
-                        unimplemented!();
+                    'e' | 'E' => {
+                        if *past_exponential {
+                            todo!()
+                        }
+                        *past_exponential = true;
                     }
                     '_' => {
-                        unimplemented!();
+                        if *last_was_underscore {
+                            todo!()
+                        }
+                        *last_was_underscore = true;
                     }
                     _ => {
                         push_token!(
@@ -370,7 +383,7 @@ pub fn lex_source(
                 }
             }
             LexingState::Identifier => match chr {
-                'A'..='Z' | 'a'..='z' | '0'..='9' | '_' => {}
+                'A'..='Z' | 'a'..='z' | '0'..='9' | '_' | '$' => {}
                 _ => {
                     let token = TSXToken::from_slice(&script[start..idx]);
                     let is_expression_prefix = token.is_expression_prefix();
@@ -488,7 +501,7 @@ pub fn lex_source(
                             Span {
                                 start: (start + offset) as u32,
                                 end: (idx + offset) as u32,
-                                source_id,
+                                source,
                             },
                         ));
                     }
@@ -564,7 +577,7 @@ pub fn lex_source(
                             continue;
                         }
                         // Tag name characters:
-                        'A'..='Z' | 'a'..='z' | '0'..='9' | ' ' => {
+                        'A'..='Z' | 'a'..='z' | '0'..='9' => {
                             // Add the opening tag here as know it is not closing
                             if !*lexed_start {
                                 match direction {
@@ -940,11 +953,15 @@ pub fn lex_source(
             match chr {
                 '0' => set_state!(LexingState::Number {
                     literal_type: Default::default(),
-                    last_character_zero: true
+                    last_character_zero: true,
+                    last_was_underscore: false,
+                    past_exponential: false
                 }),
                 '1'..='9' => set_state!(LexingState::Number {
                     literal_type: Default::default(),
-                    last_character_zero: false
+                    last_character_zero: false,
+                    last_was_underscore: false,
+                    past_exponential: false
                 }),
                 '"' => set_state!(LexingState::String {
                     double_quoted: true,
@@ -1086,7 +1103,7 @@ pub fn lex_source(
                 Span {
                     start: (start + offset) as u32,
                     end: end_of_source,
-                    source_id,
+                    source,
                 },
             ));
         }
@@ -1096,7 +1113,7 @@ pub fn lex_source(
                 Span {
                     start: (start + offset) as u32,
                     end: end_of_source,
-                    source_id,
+                    source,
                 },
             ));
         }
@@ -1113,7 +1130,7 @@ pub fn lex_source(
                         Span {
                             start: (start + offset) as u32,
                             end: end_of_source,
-                            source_id,
+                            source,
                         },
                     ));
                 }
@@ -1132,7 +1149,7 @@ pub fn lex_source(
                 Span {
                     start: (start + offset) as u32,
                     end: end_of_source,
-                    source_id,
+                    source,
                 },
             ));
         }

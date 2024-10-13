@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 
 use crate::{
-    block::BlockOrSingleStatement,
-    declarations::variable::{VariableDeclaration, VariableDeclarationKeyword},
-    ParseSettings, TSXKeyword, VariableField, VariableFieldInSourceCode, WithComment,
+    ast::MultipleExpression, block::BlockOrSingleStatement,
+    declarations::variable::VariableDeclaration, tsx_keywords, Keyword, ParseOptions, TSXKeyword,
+    VariableField, VariableFieldInSourceCode, WithComment,
 };
 use visitable_derive::Visitable;
 
-use super::{ASTNode, Expression, ParseResult, Span, TSXToken, Token, TokenReader};
+use super::{
+    ASTNode, Expression, ParseResult, Span, TSXToken, Token, TokenReader, VarVariableStatement,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Visitable)]
 #[cfg_attr(
@@ -28,7 +30,7 @@ impl ASTNode for ForLoopStatement {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let start_pos = reader.expect_next(TSXToken::Keyword(TSXKeyword::For))?;
         let condition = ForLoopCondition::from_reader(reader, state, settings)?;
@@ -44,7 +46,7 @@ impl ASTNode for ForLoopStatement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         buf.push_str("for");
@@ -61,8 +63,64 @@ impl ASTNode for ForLoopStatement {
     derive(self_rust_tokenize::SelfRustTokenize)
 )]
 pub enum ForLoopStatementInitializer {
-    Statement(VariableDeclaration),
-    Expression(Expression),
+    VariableDeclaration(VariableDeclaration),
+    VarStatement(VarVariableStatement),
+    Expression(MultipleExpression),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Visitable)]
+#[cfg_attr(
+    feature = "self-rust-tokenize",
+    derive(self_rust_tokenize::SelfRustTokenize)
+)]
+pub enum ForLoopVariableKeyword {
+    Const(Keyword<tsx_keywords::Const>),
+    Let(Keyword<tsx_keywords::Let>),
+    Var(Keyword<tsx_keywords::Var>),
+}
+
+impl ForLoopVariableKeyword {
+    pub fn is_token_variable_keyword(token: &TSXToken) -> bool {
+        matches!(
+            token,
+            TSXToken::Keyword(TSXKeyword::Const | TSXKeyword::Let | TSXKeyword::Var)
+        )
+    }
+
+    pub(crate) fn from_reader(token: Token<TSXToken, Span>) -> ParseResult<Self> {
+        match token {
+            Token(TSXToken::Keyword(TSXKeyword::Const), pos) => Ok(Self::Const(Keyword::new(pos))),
+            Token(TSXToken::Keyword(TSXKeyword::Let), pos) => Ok(Self::Let(Keyword::new(pos))),
+            Token(TSXToken::Keyword(TSXKeyword::Var), pos) => Ok(Self::Var(Keyword::new(pos))),
+            Token(token, position) => Err(crate::ParseError::new(
+                crate::ParseErrors::UnexpectedToken {
+                    expected: &[
+                        TSXToken::Keyword(TSXKeyword::Const),
+                        TSXToken::Keyword(TSXKeyword::Let),
+                        TSXToken::Keyword(TSXKeyword::Var),
+                    ],
+                    found: token,
+                },
+                position,
+            )),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Const(_) => "const ",
+            Self::Let(_) => "let ",
+            Self::Var(_) => "var ",
+        }
+    }
+
+    pub fn get_position(&self) -> &Span {
+        match self {
+            Self::Const(kw) => kw.get_position(),
+            Self::Let(kw) => kw.get_position(),
+            Self::Var(kw) => kw.get_position(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Visitable)]
@@ -72,21 +130,21 @@ pub enum ForLoopStatementInitializer {
 )]
 pub enum ForLoopCondition {
     ForOf {
-        keyword: Option<VariableDeclarationKeyword>,
+        keyword: Option<ForLoopVariableKeyword>,
         variable: WithComment<VariableField<VariableFieldInSourceCode>>,
         // TODO box...?
         of: Expression,
     },
     ForIn {
-        keyword: Option<VariableDeclarationKeyword>,
+        keyword: Option<ForLoopVariableKeyword>,
         variable: WithComment<VariableField<VariableFieldInSourceCode>>,
         // TODO box...?
         r#in: Expression,
     },
     Statements {
         initializer: Option<ForLoopStatementInitializer>,
-        condition: Option<Expression>,
-        afterthought: Option<Expression>,
+        condition: Option<MultipleExpression>,
+        afterthought: Option<MultipleExpression>,
     },
 }
 
@@ -105,7 +163,7 @@ impl ASTNode for ForLoopCondition {
             } => Cow::Owned(
                 keyword
                     .as_ref()
-                    .map(VariableDeclarationKeyword::get_position)
+                    .map(ForLoopVariableKeyword::get_position)
                     .map(Cow::Borrowed)
                     .unwrap_or_else(|| variable.get_position())
                     .union(&rhs.get_position()),
@@ -117,7 +175,8 @@ impl ASTNode for ForLoopCondition {
             } => {
                 let initializer_position = match initializer.as_ref().expect("TODO what about None")
                 {
-                    ForLoopStatementInitializer::Statement(stmt) => stmt.get_position(),
+                    ForLoopStatementInitializer::VariableDeclaration(stmt) => stmt.get_position(),
+                    ForLoopStatementInitializer::VarStatement(stmt) => stmt.get_position(),
                     ForLoopStatementInitializer::Expression(expr) => expr.get_position(),
                 };
                 Cow::Owned(
@@ -135,7 +194,7 @@ impl ASTNode for ForLoopCondition {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         reader.expect_next(TSXToken::OpenParentheses)?;
         // Figure out if after variable declaration there exists a "=", "in" or a "of"
@@ -152,7 +211,7 @@ impl ASTNode for ForLoopCondition {
                     destructuring_depth == 0
                 } else {
                     ate_variable_specifier = true;
-                    !VariableDeclarationKeyword::is_token_variable_keyword(token)
+                    !ForLoopVariableKeyword::is_token_variable_keyword(token)
                 }
             })
             .map(|Token(tok, _)| tok);
@@ -160,9 +219,9 @@ impl ASTNode for ForLoopCondition {
         let condition = match next {
             Some(TSXToken::Keyword(TSXKeyword::Of)) => {
                 let keyword = if let Some(token) =
-                    reader.conditional_next(VariableDeclarationKeyword::is_token_variable_keyword)
+                    reader.conditional_next(ForLoopVariableKeyword::is_token_variable_keyword)
                 {
-                    Some(VariableDeclarationKeyword::from_reader(token).unwrap())
+                    Some(ForLoopVariableKeyword::from_reader(token).unwrap())
                 } else {
                     None
                 };
@@ -179,9 +238,9 @@ impl ASTNode for ForLoopCondition {
             }
             Some(TSXToken::Keyword(TSXKeyword::In)) => {
                 let keyword = if let Some(token) =
-                    reader.conditional_next(VariableDeclarationKeyword::is_token_variable_keyword)
+                    reader.conditional_next(ForLoopVariableKeyword::is_token_variable_keyword)
                 {
-                    Some(VariableDeclarationKeyword::from_reader(token).unwrap())
+                    Some(ForLoopVariableKeyword::from_reader(token).unwrap())
                 } else {
                     None
                 };
@@ -198,29 +257,35 @@ impl ASTNode for ForLoopCondition {
             }
             _ => {
                 let peek = reader.peek();
-                let initializer = if let Some(Token(
-                    TSXToken::Keyword(TSXKeyword::Const | TSXKeyword::Let | TSXKeyword::Var),
-                    _,
-                )) = peek
-                {
-                    let declaration = VariableDeclaration::from_reader(reader, state, settings)?;
-                    Some(ForLoopStatementInitializer::Statement(declaration))
-                } else if let Some(Token(TSXToken::SemiColon, _)) = peek {
-                    None
-                } else {
-                    let expr = Expression::from_reader(reader, state, settings)?;
-                    Some(ForLoopStatementInitializer::Expression(expr))
-                };
+                let initializer =
+                    if let Some(Token(TSXToken::Keyword(TSXKeyword::Const | TSXKeyword::Let), _)) =
+                        peek
+                    {
+                        let declaration =
+                            VariableDeclaration::from_reader(reader, state, settings)?;
+                        Some(ForLoopStatementInitializer::VariableDeclaration(
+                            declaration,
+                        ))
+                    } else if let Some(Token(TSXToken::Keyword(TSXKeyword::Var), _)) = peek {
+                        let stmt = VarVariableStatement::from_reader(reader, state, settings)?;
+                        Some(ForLoopStatementInitializer::VarStatement(stmt))
+                    } else if let Some(Token(TSXToken::SemiColon, _)) = peek {
+                        None
+                    } else {
+                        let expr = MultipleExpression::from_reader(reader, state, settings)?;
+                        Some(ForLoopStatementInitializer::Expression(expr))
+                    };
+
                 reader.expect_next(TSXToken::SemiColon)?;
                 let condition = if !matches!(reader.peek(), Some(Token(TSXToken::SemiColon, _))) {
-                    Some(Expression::from_reader(reader, state, settings)?)
+                    Some(MultipleExpression::from_reader(reader, state, settings)?)
                 } else {
                     None
                 };
                 reader.expect_next(TSXToken::SemiColon)?;
                 let afterthought =
                     if !matches!(reader.peek(), Some(Token(TSXToken::CloseParentheses, _))) {
-                        Some(Expression::from_reader(reader, state, settings)?)
+                        Some(MultipleExpression::from_reader(reader, state, settings)?)
                     } else {
                         None
                     };
@@ -238,7 +303,7 @@ impl ASTNode for ForLoopCondition {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         buf.push('(');
@@ -276,11 +341,14 @@ impl ASTNode for ForLoopCondition {
             } => {
                 if let Some(initializer) = initializer {
                     match initializer {
-                        ForLoopStatementInitializer::Statement(stmt) => {
+                        ForLoopStatementInitializer::VariableDeclaration(stmt) => {
                             stmt.to_string_from_buffer(buf, settings, depth)
                         }
                         ForLoopStatementInitializer::Expression(expr) => {
                             expr.to_string_from_buffer(buf, settings, depth);
+                        }
+                        ForLoopStatementInitializer::VarStatement(stmt) => {
+                            stmt.to_string_from_buffer(buf, settings, depth)
                         }
                     }
                 }

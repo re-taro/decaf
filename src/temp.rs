@@ -1,9 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use parser::{
-    expressions::ExpressionId, source_map::MapFileStore, ASTNode, ParseSettings, SourceId,
-    ToStringSettings,
-};
+use parser::{source_map::MapFileStore, ASTNode, ParseOptions, SourceId, ToStringOptions};
 
 use crate::error_handling::{self, TempDiagnostic};
 
@@ -35,7 +32,7 @@ pub fn build<T: crate::FSResolver>(
 
     let module_result = parser::Module::from_string(
         content,
-        ParseSettings::default(),
+        ParseOptions::default(),
         source_id,
         None,
         Default::default(),
@@ -66,8 +63,7 @@ pub fn build<T: crate::FSResolver>(
         &parser::VisitSettings::default(),
     );
 
-    let (content, source_map) =
-        output.to_string_with_source_map(&ToStringSettings::minified(), &fs);
+    let (content, source_map) = output.to_string_with_source_map(&ToStringOptions::minified(), &fs);
 
     let output = Output {
         output_path: output_path.to_path_buf(),
@@ -116,8 +112,7 @@ impl parser::VisitorMut<parser::Expression, Vec<TempDiagnostic>> for InvertTerna
                     kind: error_handling::ErrorWarningInfo::Info,
                 });
 
-                let temp_swap =
-                    parser::Expression::Null(parser::Span::NULL_SPAN, ExpressionId::NULL);
+                let temp_swap = parser::Expression::Null(parser::Span::NULL_SPAN);
 
                 *condition = Box::new(std::mem::replace(operand, temp_swap));
                 std::mem::swap(truthy_result, falsy_result);

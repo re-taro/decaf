@@ -1,4 +1,5 @@
-use decaf_parser::{ASTNode, Module, SourceId};
+use decaf_parser::{ASTNode, Module, SourceId, ToStringOptions};
+use pretty_assertions::assert_eq;
 
 #[test]
 fn statements() {
@@ -26,6 +27,9 @@ try {
     doThing()
 } catch (e) {
     console.error(e)
+}
+interface X {
+    a: string
 }"#
     .trim_start();
 
@@ -38,7 +42,7 @@ try {
     )
     .unwrap();
 
-    let output = module.to_string(&Default::default());
+    let output = module.to_string(&ToStringOptions::typescript());
 
     assert_eq!(output, input);
 }

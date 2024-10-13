@@ -312,7 +312,7 @@ fn build<T: crate::FSResolver>(fs_resolver: T, build_arguments: BuildArguments) 
 
     // TODO debug_types temp
     // let type_check_settings = TypeCheckSettings { ..Default::default() };
-    let _output_settings = parser::ToStringSettings {
+    let _output_settings = parser::ToStringOptions {
         include_comments: !no_comments,
         pretty: !minify,
         ..Default::default()

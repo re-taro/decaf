@@ -6,7 +6,7 @@ use tokenizer_lib::{Token, TokenReader};
 use visitable_derive::Visitable;
 
 use crate::{
-    tokens::token_as_identifier, ASTNode, Expression, ParseResult, ParseSettings, TSXToken,
+    tokens::token_as_identifier, ASTNode, Expression, ParseOptions, ParseResult, TSXToken,
     Visitable,
 };
 
@@ -29,7 +29,7 @@ impl ASTNode for Decorator {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let at_pos = reader.expect_next(TSXToken::At)?;
         Self::from_reader_sub_at_symbol(reader, state, settings, at_pos)
@@ -38,7 +38,7 @@ impl ASTNode for Decorator {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if settings.include_decorators {
@@ -63,7 +63,7 @@ impl Decorator {
     pub(crate) fn from_reader_sub_at_symbol(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
         at_pos: Span,
     ) -> ParseResult<Self> {
         let (name, name_position) = token_as_identifier(reader.next().unwrap(), "Decorator name")?;
@@ -116,7 +116,7 @@ impl<N: ASTNode> ASTNode for Decorated<N> {
     fn from_reader(
         reader: &mut impl TokenReader<TSXToken, Span>,
         state: &mut crate::ParsingState,
-        settings: &ParseSettings,
+        settings: &ParseOptions,
     ) -> ParseResult<Self> {
         let decorators = decorators_from_reader(reader, state, settings)?;
         N::from_reader(reader, state, settings).map(|on| Self { on, decorators })
@@ -125,7 +125,7 @@ impl<N: ASTNode> ASTNode for Decorated<N> {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         self.to_string_from_buffer_just_decorators(buf, settings, depth);
@@ -144,7 +144,7 @@ impl<U> Decorated<U> {
     pub(crate) fn to_string_from_buffer_just_decorators<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringSettings,
+        settings: &crate::ToStringOptions,
         depth: u8,
     ) {
         if settings.include_decorators {
@@ -163,7 +163,7 @@ impl<U> Decorated<U> {
 pub(crate) fn decorators_from_reader(
     reader: &mut impl TokenReader<TSXToken, Span>,
     state: &mut crate::ParsingState,
-    settings: &ParseSettings,
+    settings: &ParseOptions,
 ) -> ParseResult<Vec<Decorator>> {
     let mut decorators = Vec::new();
     while let Some(Token(TSXToken::At, _)) = reader.peek() {
