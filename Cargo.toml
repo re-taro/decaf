@@ -1,5 +1,12 @@
 [workspace]
-members = ["parser", "parser/visitable-derive", "parser/generator", "checker"]
+members = [
+  "parser",
+  "parser/visitable-derive",
+  "parser/generator",
+  "checker",
+  "checker/binary-serialize-derive",
+  # "checker/specification",
+]
 
 [package]
 name = "decaf"
@@ -20,8 +27,12 @@ name = "decaf"
 path = "src/main.rs"
 
 [dependencies]
-parser = { path = "./parser", version = "0.0.0", package = "decaf-parser" }
-checker = { path = "./checker", version = "0.0.0", package = "decaf-checker" }
+parser = { path = "./parser", version = "0.0.0", package = "decaf-parser", features = [
+  "extras",
+] }
+checker = { path = "./checker", version = "0.0.0", package = "decaf-checker", features = [
+  "decaf-parser",
+] }
 console = "0.14.1"
 codespan-reporting = "0.11.1"
 argh = "0.1.6"

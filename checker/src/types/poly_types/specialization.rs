@@ -33,7 +33,13 @@ pub(crate) fn specialize(
                 id
             } else {
                 // Other root poly types cases handled by the early return
-                crate::utils::notify!("Could not find argument for {}", types.debug_type(id));
+                let on = crate::types::printing::print_type(
+                    id,
+                    types,
+                    &environment.into_general_context(),
+                    true,
+                );
+                crate::utils::notify!("Could not find argument for {}", on);
                 id
             }
         }
@@ -55,8 +61,6 @@ pub(crate) fn specialize(
                     types,
                 );
 
-                todo!()
-
                 // match e
 
                 // crate::utils::notify!(
@@ -64,7 +68,8 @@ pub(crate) fn specialize(
                 // 	environment.debug_type(value, types)
                 // );
 
-                // value
+                // .expect("restriction about binary operator failed")
+                evaluate_binary_operator.unwrap_or(TypeId::ERROR_TYPE)
             }
             Constructor::UnaryOperator {
                 operand, operator, ..
@@ -87,9 +92,24 @@ pub(crate) fn specialize(
             } => {
                 crate::utils::notify!(
                     "before {:?} {:?} {:?}",
-                    types.debug_type(on),
-                    types.debug_type(true_res),
-                    types.debug_type(false_res)
+                    crate::types::printing::print_type(
+                        on,
+                        types,
+                        &environment.into_general_context(),
+                        true
+                    ),
+                    crate::types::printing::print_type(
+                        true_res,
+                        types,
+                        &environment.into_general_context(),
+                        true
+                    ),
+                    crate::types::printing::print_type(
+                        false_res,
+                        types,
+                        &environment.into_general_context(),
+                        true
+                    )
                 );
                 let on = specialize(on, arguments, environment, types);
                 let true_res = specialize(true_res, arguments, environment, types);
@@ -97,9 +117,24 @@ pub(crate) fn specialize(
 
                 crate::utils::notify!(
                     "after {:?} {:?} {:?}",
-                    types.debug_type(on),
-                    types.debug_type(true_res),
-                    types.debug_type(false_res)
+                    crate::types::printing::print_type(
+                        on,
+                        types,
+                        &environment.into_general_context(),
+                        true
+                    ),
+                    crate::types::printing::print_type(
+                        true_res,
+                        types,
+                        &environment.into_general_context(),
+                        true
+                    ),
+                    crate::types::printing::print_type(
+                        false_res,
+                        types,
+                        &environment.into_general_context(),
+                        true
+                    )
                 );
 
                 // TODO falsy
@@ -206,7 +241,7 @@ pub(crate) fn specialize(
 
                     // TODO what about unknown...
 
-                    let does_extend = matches!(result, SubTypeResult::IsSubtype);
+                    let does_extend = matches!(result, SubTypeResult::IsSubType);
 
                     if does_extend {
                         TypeId::TRUE

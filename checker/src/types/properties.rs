@@ -26,20 +26,21 @@ impl From<PropertyResult> for TypeId {
     }
 }
 
+/// TODO type predicate based
 #[derive(Clone, Debug, binary_serialize_derive::BinarySerializable)]
 pub enum Property {
     Value(TypeId),
-    Get(Box<FunctionType>),
-    Set(Box<FunctionType>),
-    GetAndSet(Box<FunctionType>, Box<FunctionType>),
+    Getter(Box<FunctionType>),
+    Setter(Box<FunctionType>),
+    GetterAndSetter(Box<FunctionType>, Box<FunctionType>),
 }
 impl Property {
     pub(crate) fn as_get_type(&self) -> TypeId {
         match self {
             Property::Value(value) => *value,
-            Property::Get(func) => func.return_type,
-            Property::Set(_) => todo!(),
-            Property::GetAndSet(_, _) => todo!(),
+            Property::Getter(func) => func.return_type,
+            Property::Setter(_) => todo!(),
+            Property::GetterAndSetter(_, _) => todo!(),
         }
     }
 }
@@ -68,11 +69,11 @@ pub(crate) fn get_property(
     let value: GetResult = if let Some(constraint) = environment.get_poly_base(on, types) {
         match constraint {
             PolyBase::Fixed { to, is_open_poly } => {
-                crate::utils::notify!(
-                    "Get property found fixed constraint {}, is_open_poly={:?}",
-                    environment.debug_type(on, types),
-                    is_open_poly
-                );
+                // crate::utils::notify!(
+                // 	"Get property found fixed constraint {}, is_open_poly={:?}",
+                // 	environment.debug_type(on, types),
+                // 	is_open_poly
+                // );
 
                 let fact = environment.get_property_unbound(to, under, types)?;
 
@@ -118,9 +119,9 @@ pub(crate) fn get_property(
                                     Type::Object(..) => todo!(),
                                 }
                             }
-                            Property::Get(_) => todo!(),
-                            Property::Set(_) => todo!(),
-                            Property::GetAndSet(_, _) => todo!(),
+                            Property::Getter(_) => todo!(),
+                            Property::Setter(_) => todo!(),
+                            Property::GetterAndSetter(_, _) => todo!(),
                         }
                     }
                     Logical::Or(_) => todo!(),
@@ -198,7 +199,13 @@ pub(crate) fn get_property(
                                     ))
                                 }
                                 super::FunctionNature::Constructor => todo!(),
-                                super::FunctionNature::Reference => unreachable!(),
+                                super::FunctionNature::Reference => {
+                                    crate::utils::notify!("TODO temp reference function business");
+                                    types.register_type(Type::Function(
+                                        func.clone(),
+                                        super::FunctionNature::Source(Some(on)),
+                                    ))
+                                }
                             },
                             Type::Object(..) | Type::RootPolyType { .. } | Type::Constant(..) => {
                                 value
@@ -207,10 +214,13 @@ pub(crate) fn get_property(
                             | Type::And(_, _)
                             | Type::Or(_, _)
                             | Type::Constructor(Constructor::StructureGenerics { .. }) => {
-                                unreachable!(
-									"property was {:?} {:?}, which should be able to be retutned from a function",
+                                crate::utils::notify!(
+									"property was {:?} {:?}, which should be NOT be able to be returned from a function",
 									property, ty
-								)
+								);
+                                types.register_type(Type::RootPolyType(
+                                    crate::types::PolyNature::Open(value),
+                                ))
                             }
                             Type::Constructor(constructor) => {
                                 unreachable!("Interesting property was {:?}", constructor);
@@ -256,15 +266,16 @@ pub(crate) fn get_property(
                             }
                         }
                     }
-                    Property::Get(func) => {
+                    Property::Getter(func) => {
                         return match func.call(
-                            &[],
+                            crate::events::CalledWithNew::None,
                             Some(on),
                             None,
                             &None,
+                            &[],
+                            Span::NULL_SPAN,
                             types,
                             environment,
-                            crate::events::CalledWithNew::None,
                         ) {
                             Ok(res) => Some(PropertyResult::Getter(res.returned_type)),
                             Err(_) => {
@@ -272,8 +283,8 @@ pub(crate) fn get_property(
                             }
                         }
                     }
-                    Property::Set(_) => todo!(),
-                    Property::GetAndSet(_, _) => todo!(),
+                    Property::Setter(_) => todo!(),
+                    Property::GetterAndSetter(_, _) => todo!(),
                 }
             }
             Logical::Or(_) => todo!(),
@@ -355,7 +366,7 @@ pub(crate) fn set_property(
                 position: Span {
                     start: 0,
                     end: 0,
-                    source_id: SourceId::NULL,
+                    source: SourceId::NULL,
                 },
             };
             let base_type = constraint.prop_to_type();
@@ -378,12 +389,17 @@ pub(crate) fn set_property(
         }
     }
 
-    crate::utils::notify!(
-        "setting {:?} {:?} {:?}",
-        types.debug_type(on),
-        types.debug_type(under),
-        types.debug_type(new.as_get_type())
-    );
+    // crate::utils::notify!(
+    // 	"setting {:?} {:?} {:?}",
+    // 	crate::types::printing::print_type(types, on, &environment.into_general_context(), true),
+    // 	crate::types::printing::print_type(types, under, &environment.into_general_context(), true),
+    // 	crate::types::printing::print_type(
+    // 		types,
+    // 		new.as_get_type(),
+    // 		&environment.into_general_context(),
+    // 		true
+    // 	)
+    // );
 
     let current_property = environment.get_property_unbound(on, under, types);
 
@@ -441,7 +457,7 @@ pub(crate) fn set_property(
                             // 		position: parser::Span {
                             // 			start: 0,
                             // 			end: 0,
-                            // 			source_id: parser::SourceId::NULL,
+                            // 			source: parser::SourceId::NULL,
                             // 		},
                             // 	};
                             // 	return Ok(Some(
@@ -470,9 +486,9 @@ pub(crate) fn set_property(
                         }
                     }
                 }
-                Property::Get(_) => todo!(),
-                Property::Set(_) => todo!(),
-                Property::GetAndSet(_, _) => todo!(),
+                Property::Getter(_) => todo!(),
+                Property::Setter(_) => todo!(),
+                Property::GetterAndSetter(_, _) => todo!(),
             },
             Logical::Or(_) => todo!(),
             Logical::Implies(_, _) => todo!(),

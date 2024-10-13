@@ -10,18 +10,33 @@ use crate::{
 };
 
 #[derive(Copy, Clone, Debug, binary_serialize_derive::BinarySerializable)]
-pub enum GetSetGeneratorOrNone {
-    Get,
-    Set,
+pub enum GetterSetterGeneratorOrNone {
+    Setter,
+    Getter,
     Generator,
     None,
 }
 
+pub enum FunctionKind2 {
+    ArrowFunction {
+        is_async: bool,
+    },
+    StatementFunction {
+        is_async: bool,
+        generator: bool,
+    },
+    ClassConstructor,
+    Method {
+        getter_setter_or_generator: GetterSetterGeneratorOrNone,
+    },
+}
+
+/// TODO generalize for property registration...
 pub trait RegisterBehavior {
     type Return;
 
     /// TODO lift T
-    fn func<T: SynthesizableFunction, U: ContextType>(
+    fn function<T: SynthesizableFunction, U: ContextType>(
         &self,
         func: &T,
         func_ty: FunctionType,
@@ -35,7 +50,7 @@ pub struct RegisterAsType;
 impl RegisterBehavior for RegisterAsType {
     type Return = TypeId;
 
-    fn func<T: SynthesizableFunction, U: ContextType>(
+    fn function<T: SynthesizableFunction, U: ContextType>(
         &self,
         func: &T,
         func_ty: FunctionType,
@@ -55,7 +70,7 @@ pub struct RegisterOnExisting(pub String);
 impl RegisterBehavior for RegisterOnExisting {
     type Return = ();
 
-    fn func<T: SynthesizableFunction, U: ContextType>(
+    fn function<T: SynthesizableFunction, U: ContextType>(
         &self,
         func: &T,
         func_ty: FunctionType,
@@ -72,9 +87,8 @@ impl RegisterBehavior for RegisterOnExisting {
             .unwrap()
             .declared_at
             .clone();
-        environment
-            .variable_current_value
-            .insert(VariableId(variable_id), ty);
+        let variable_id = VariableId(variable_id.source, variable_id.start);
+        environment.variable_current_value.insert(variable_id, ty);
     }
 }
 
@@ -83,7 +97,7 @@ pub struct RegisterOnExistingObject;
 impl RegisterBehavior for RegisterOnExistingObject {
     type Return = Property;
 
-    fn func<T: SynthesizableFunction, U: ContextType>(
+    fn function<T: SynthesizableFunction, U: ContextType>(
         &self,
         func: &T,
         func_ty: FunctionType,
@@ -91,9 +105,10 @@ impl RegisterBehavior for RegisterOnExistingObject {
         types: &mut TypeStore,
     ) -> Self::Return {
         match func.get_set_generator_or_none() {
-            crate::GetSetGeneratorOrNone::Get => Property::Get(Box::new(func_ty)),
-            crate::GetSetGeneratorOrNone::Set => Property::Set(Box::new(func_ty)),
-            crate::GetSetGeneratorOrNone::Generator | crate::GetSetGeneratorOrNone::None => {
+            crate::GetterSetterGeneratorOrNone::Getter => Property::Getter(Box::new(func_ty)),
+            crate::GetterSetterGeneratorOrNone::Setter => Property::Setter(Box::new(func_ty)),
+            crate::GetterSetterGeneratorOrNone::Generator
+            | crate::GetterSetterGeneratorOrNone::None => {
                 let ty = Type::Function(func_ty, FunctionNature::Source(None));
                 let ty = types.register_type(ty);
                 Property::Value(ty)
@@ -107,7 +122,7 @@ pub trait SynthesizableFunction {
 
     fn is_async(&self) -> bool;
 
-    fn get_set_generator_or_none(&self) -> GetSetGeneratorOrNone;
+    fn get_set_generator_or_none(&self) -> GetterSetterGeneratorOrNone;
 
     fn id(&self) -> FunctionId;
 
