@@ -135,8 +135,9 @@ fn parse_token_stream(
                         panic!("Expected ident")
                     }
                 } else {
-                    let spacing = matches!(punctuation.spacing(), Spacing::Alone);
-                    if spacing && !(string.ends_with("<") && chr == '/') {
+                    let spacing = matches!(punctuation.spacing(), Spacing::Alone)
+                        && !matches!(chr, '<' | '>' | '/');
+                    if spacing && !string.ends_with("</") {
                         string.push(' ');
                     }
                     string.push(chr);

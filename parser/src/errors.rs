@@ -51,6 +51,9 @@ pub enum LexingErrors {
     ExpectedEndToRegexLiteral,
     ExpectedEndToJSXLiteral,
     ExpectedEndToTemplateLiteral,
+    TwoExponents,
+    TwoUnderscores,
+    TrailingUnderscore,
 }
 
 impl Display for LexingErrors {
@@ -91,6 +94,13 @@ impl Display for LexingErrors {
             LexingErrors::ExpectedEndToTemplateLiteral => f.write_str("Unclosed template literal"),
             LexingErrors::UnexpectedCharacter(err) => Display::fmt(err, f),
             LexingErrors::UnbalancedJSXClosingTags => f.write_str("Too many closing JSX tags"),
+            LexingErrors::TwoExponents => f.write_str("Two e in number literal"),
+            LexingErrors::TwoUnderscores => {
+                f.write_str("Only one underscore is allowed as numeric separator")
+            }
+            LexingErrors::TrailingUnderscore => {
+                f.write_str("Number literal cannot end with numeric separator")
+            }
         }
     }
 }
