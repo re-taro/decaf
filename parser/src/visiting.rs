@@ -240,7 +240,8 @@ mod ast {
         crate::VariableIdentifier,
         crate::PropertyReference,
         crate::Quoted,
-        crate::PropertyKey
+        crate::PropertyKey<crate::property_key::AlwaysPublic>,
+        crate::PropertyKey<crate::property_key::PublicOrPrivate>
     ];
 }
 
@@ -248,7 +249,10 @@ mod ast {
 mod structures {
     use std::borrow::Cow;
 
-    use crate::VariableFieldInSourceCode;
+    use crate::{
+        property_key::{AlwaysPublic, PublicOrPrivate},
+        VariableFieldInSourceCode,
+    };
 
     use super::*;
     use source_map::Span;
@@ -324,9 +328,10 @@ mod structures {
         ObjectDestructuringMember(
             &'a mut WithComment<ObjectDestructuringField<VariableFieldInSourceCode>>,
         ),
-        PropertyKey(&'a mut WithComment<PropertyKey>, PropertyKeyLocation),
         ClassName(Option<&'a mut String>),
         FunctionName(&'a mut String),
+        ClassPropertyKey(&'a mut WithComment<PropertyKey<PublicOrPrivate>>),
+        ObjectPropertyKey(&'a mut WithComment<PropertyKey<AlwaysPublic>>),
     }
 
     /// TODO these may go
@@ -341,13 +346,8 @@ mod structures {
         ),
         ClassName(Option<&'a str>, &'a Span),
         FunctionName(&'a str, &'a Span),
-        PropertyKey(&'a WithComment<PropertyKey>, PropertyKeyLocation),
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub enum PropertyKeyLocation {
-        Class,
-        ObjectLiteral,
+        ClassPropertyKey(&'a WithComment<PropertyKey<PublicOrPrivate>>),
+        ObjectPropertyKey(&'a WithComment<PropertyKey<AlwaysPublic>>),
     }
 
     impl<'a> ImmutableVariableOrPropertyPart<'a> {
@@ -358,9 +358,17 @@ mod structures {
                 ImmutableVariableOrPropertyPart::ArrayDestructuringMember(_)
                 | ImmutableVariableOrPropertyPart::ObjectDestructuringMember(_) => None,
                 ImmutableVariableOrPropertyPart::ClassName(name, _) => *name,
-                ImmutableVariableOrPropertyPart::PropertyKey(property, _) => {
+                ImmutableVariableOrPropertyPart::ObjectPropertyKey(property) => {
                     match property.get_ast() {
-                        PropertyKey::Ident(ident, _) | PropertyKey::StringLiteral(ident, _) => {
+                        PropertyKey::Ident(ident, _, _) | PropertyKey::StringLiteral(ident, _) => {
+                            Some(ident.as_str())
+                        }
+                        PropertyKey::NumberLiteral(_, _) | PropertyKey::Computed(_, _) => None,
+                    }
+                }
+                ImmutableVariableOrPropertyPart::ClassPropertyKey(property) => {
+                    match property.get_ast() {
+                        PropertyKey::Ident(ident, _, _) | PropertyKey::StringLiteral(ident, _) => {
                             Some(ident.as_str())
                         }
                         PropertyKey::NumberLiteral(_, _) | PropertyKey::Computed(_, _) => None,
@@ -381,7 +389,10 @@ mod structures {
                 ImmutableVariableOrPropertyPart::ObjectDestructuringMember(member) => {
                     member.get_position()
                 }
-                ImmutableVariableOrPropertyPart::PropertyKey(property_key, _) => {
+                ImmutableVariableOrPropertyPart::ClassPropertyKey(property_key) => {
+                    property_key.get_position()
+                }
+                ImmutableVariableOrPropertyPart::ObjectPropertyKey(property_key) => {
                     property_key.get_position()
                 }
             }

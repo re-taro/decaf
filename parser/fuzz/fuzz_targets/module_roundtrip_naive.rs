@@ -33,7 +33,10 @@ fn do_fuzz(data: &str) -> Corpus {
         panic!("input: `{input}`\noutput1: `{output1}`\n\nThis parse should not error because it was just parsed above");
     };
 
-    let output2 = module.to_string(&ToStringOptions::default());
+    let output2 = module.to_string(&ToStringOptions {
+        trailing_semicolon: true,
+        ..ToStringOptions::default()
+    });
 
     assert_eq!(output1, output2);
 

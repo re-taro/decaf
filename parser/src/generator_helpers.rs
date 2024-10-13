@@ -13,6 +13,7 @@ impl<T: ASTNode> IntoAST<T> for T {
     }
 }
 
+#[allow(dead_code)]
 pub struct Ident<'a>(&'a str);
 
 impl<'a> IntoAST<Expression> for Ident<'a> {
