@@ -7,11 +7,10 @@ repository = "https://github.com/re-taro/decaf"
 
 [features]
 default = []
-declaration-synthesis = []
 decaf-parser = ["parser"]
 
 [dependencies]
-source-map = { version = "0.12.0", features = ["span-serialize"] }
+source-map = { version = "0.13", features = ["span-serialize"] }
 binary-serialize-derive = { path = "./binary-serialize-derive", version = "0.0.0" }
 temporary-annex = "0.1.0"
 derive-enum-from-into = "0.1.0"

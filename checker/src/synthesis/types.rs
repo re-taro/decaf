@@ -1,8 +1,8 @@
 /// TSC's implementation is to return any for unknown type
 /// This method imitates that and adds a error to the handler
 pub fn get_type_handle_errors<U: crate::FSResolver>(
-    &mut self,
-    reference: &TypeReference,
+    &self,
+    reference: &TypeAnnotation,
     checking_data: &mut CheckingData<U>,
 ) -> TypeId {
     let get_type_result = self.get_type(reference, checking_data);
@@ -24,9 +24,9 @@ pub fn get_type_handle_errors<U: crate::FSResolver>(
 /// Also adds item constraints incrementally
 ///
 /// TODO do not like it can take and mutate top level but we move
-pub(crate) fn type_generic_type_constraints<T: crate::FSResolver, S: ContextType>(
+pub(super) fn type_generic_type_constraints<T: crate::FSResolver, S: ContextType>(
     generic_constraints: &Vec<GenericTypeConstraint>,
-    environment: &mut Context<S>,
+    environment: &Context<S>,
     checking_data: &mut CheckingData<T>,
     existing_ids: Option<Vec<TypeId>>,
 ) -> GenericTypeParameters {
@@ -74,7 +74,7 @@ pub(crate) fn type_generic_type_constraints<T: crate::FSResolver, S: ContextType
                 };
                 let id = checking_data
                     .types
-                    .new_type(Type::RootPolyType(poly_nature));
+                    .register_type(Type::RootPolyType(poly_nature));
                 environment.named_types.insert(name.clone(), id);
                 // };
 

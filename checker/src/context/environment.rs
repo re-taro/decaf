@@ -443,7 +443,7 @@ impl<'a> Environment<'a> {
         }
     }
 
-    pub fn get_variable_or_error<U>(
+    pub fn get_variable_or_error<U: crate::FSResolver>(
         &mut self,
         name: &str,
         pos: &Span,
@@ -475,7 +475,7 @@ impl<'a> Environment<'a> {
             let based_on = match og_var.mutability {
                 VariableMutability::Constant => {
                     let variable_id =
-                        VariableId(og_var.declared_at.source_id, og_var.declared_at.start);
+                        VariableId(og_var.declared_at.source, og_var.declared_at.start);
                     let constraint = checking_data
                         .type_mappings
                         .variables_to_constraints
@@ -485,14 +485,30 @@ impl<'a> Environment<'a> {
                     // TODO is primitive, then can just use type
                     match constraint {
                         Some(constraint) => crate::types::PolyPointer::Fixed(*constraint),
-                        None => todo!(),
+                        None => {
+                            checking_data.raise_unimplemented_error(
+                                "constraint across boundary",
+                                pos.clone(),
+                            );
+                            return Ok(VariableWithValue(
+                                og_var.clone(),
+                                TypeId::UNIMPLEMENTED_ERROR_TYPE,
+                            ));
+                        }
                     }
                 }
                 VariableMutability::Mutable {
                     reassignment_constraint,
                 } => match reassignment_constraint {
                     Some(constraint) => crate::types::PolyPointer::Fixed(constraint),
-                    None => todo!(),
+                    None => {
+                        checking_data
+                            .raise_unimplemented_error("constraint across boundary", pos.clone());
+                        return Ok(VariableWithValue(
+                            og_var.clone(),
+                            TypeId::UNIMPLEMENTED_ERROR_TYPE,
+                        ));
+                    }
                 },
             };
 

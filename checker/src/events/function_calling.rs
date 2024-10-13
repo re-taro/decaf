@@ -44,6 +44,7 @@ pub enum FunctionCallingError {
     },
     NotCallable {
         calling: TypeStringRepresentation,
+        call_site: Span,
     },
     ReferenceRestrictionDoesNotMatch {
         reference: RootReference,
@@ -80,19 +81,14 @@ impl FunctionType {
     /// Returns warnings and errors
     pub(crate) fn call(
         &self,
-        arguments: &[SynthesizedArgument],
-        // Explicit this, else get from environment is set
-        // TODO also mentioned in `called_with_new`
+        called_with_new: CalledWithNew,
         mut this_argument: Option<TypeId>,
-        // Arguments from call site e.g map<string>
-        // TODO join as a tuple ...?
         call_site_type_arguments: Option<Vec<(Span, TypeId)>>,
-        // Arguments from outside e.g Array.prototype.map
         parent_type_arguments: &Option<CurriedFunctionTypeArguments>,
-        // Used for matching up arguments with their implementations and calling functions
+        arguments: &[SynthesizedArgument],
+        call_site: Span,
         types: &mut crate::TypeStore,
         environment: &mut crate::context::Environment,
-        called_with_new: CalledWithNew,
     ) -> Result<FunctionCallResult, Vec<FunctionCallingError>> {
         let (mut errors, mut warnings) = (Vec::new(), Vec::<()>::new());
 
@@ -159,34 +155,37 @@ impl FunctionType {
         };
 
         match self.kind {
-            FunctionKind::Arrow { get_set } => match get_set {
-                crate::GetSetGeneratorOrNone::Generator => todo!(),
-                crate::GetSetGeneratorOrNone::Get
-                | crate::GetSetGeneratorOrNone::Set
-                | crate::GetSetGeneratorOrNone::None => {
-                    if !matches!(called_with_new, CalledWithNew::None) {
-                        todo!("Error");
-                    }
-                }
-            },
-            FunctionKind::ClassConstructor {
-                class_prototype,
-                class_constructor,
-            } => match called_with_new {
-                CalledWithNew::New { .. } => {}
-                CalledWithNew::SpecialSuperCall { on } => {
-                    type_arguments.set_this(on);
-                    this_argument = Some(on);
-                }
-                CalledWithNew::None => {
-                    todo!("Error")
-                }
-            },
+            FunctionKind::Arrow => {}
+            // match get_set {
+            // crate::GetSetGeneratorOrNone::Generator => todo!(),
+            // crate::GetSetGeneratorOrNone::Get
+            // | crate::GetSetGeneratorOrNone::Set
+            // | crate::GetSetGeneratorOrNone::None => {
+            // 	if !matches!(called_with_new, CalledWithNew::None) {
+            // 		todo!("Error");
+            // 	}
+            // }
+            // },
+            // class_prototype, class_constructor
+            FunctionKind::ClassConstructor {} => {
+                todo!()
+                // match called_with_new {
+                // 	CalledWithNew::New { .. } => {}
+                // 	CalledWithNew::SpecialSuperCall { on } => {
+                // 		type_arguments.set_this(on);
+                // 		this_argument = Some(on);
+                // 	}
+                // 	CalledWithNew::None => {
+                // 		todo!("Error")
+                // 	}
+                // }
+            }
             FunctionKind::Function { function_prototype } => {
                 if let (CalledWithNew::None { .. }, Some(arg)) = (called_with_new, &this_argument) {
                     type_arguments.set_this(*arg);
                 }
             }
+            FunctionKind::Method => {}
         }
 
         let arg = match called_with_new {
@@ -296,11 +295,15 @@ impl FunctionType {
                         })
                     }
                 } else if let Some(value) = parameter.missing_value {
-                    todo!()
+                    // TODO evaluate effects
+                    seeding_context
+                        .type_arguments
+                        .set_id(parameter.ty, value, types)
                 } else {
+                    // TODO group
                     errors.push(FunctionCallingError::MissingArgument {
                         parameter_position: parameter.position.clone(),
-                        call_site: todo!(),
+                        call_site: call_site.clone(),
                     });
                 }
 
@@ -464,7 +467,7 @@ impl FunctionType {
                         position: Span {
                             start: 0,
                             end: 0,
-                            source_id: SourceId::NULL,
+                            source: SourceId::NULL,
                         },
                     };
                     if let SubTypeResult::IsNotSubType(reasons) = type_is_subtype(
@@ -503,7 +506,7 @@ impl FunctionType {
                         position: Span {
                             start: 0,
                             end: 0,
-                            source_id: SourceId::NULL,
+                            source: SourceId::NULL,
                         },
                     };
                     if let SubTypeResult::IsNotSubType(reasons) = type_is_subtype(

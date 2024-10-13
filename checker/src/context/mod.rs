@@ -11,6 +11,7 @@ pub mod store;
 pub use root::Root;
 
 pub(crate) use bases::InferenceBoundary;
+pub(crate) use root::Operators;
 
 use source_map::Span;
 
@@ -185,6 +186,7 @@ pub(super) enum CanUseThis {
     },
 }
 
+#[derive(Clone)]
 pub enum VariableRegisterBehavior {
     Register {
         mutability: VariableMutability,
@@ -306,7 +308,7 @@ impl<T: ContextType> Context<T> {
         behavior: VariableRegisterBehavior,
         types: &mut TypeStore,
     ) -> Result<TypeId, CannotRedeclareVariable<'b>> {
-        let id = VariableId(declared_at.source_id, declared_at.start);
+        let id = VariableId(declared_at.source, declared_at.start);
         self.variable_names.insert(id, name.to_owned());
 
         let (existing_variable, ty) = match behavior {
@@ -1057,6 +1059,7 @@ impl<T: ContextType> Context<T> {
         }
     }
 
+    /// Use
     pub fn new_function<
         U: crate::FSResolver,
         V: crate::behavior::functions::RegisterBehavior,
@@ -1064,7 +1067,7 @@ impl<T: ContextType> Context<T> {
     >(
         &mut self,
         checking_data: &mut CheckingData<U>,
-        func: &F,
+        function: &F,
         register_behavior: V,
     ) -> V::Return {
         let mut func_env = self.new_lexical_environment(Scope::Function {
@@ -1075,26 +1078,26 @@ impl<T: ContextType> Context<T> {
             constructor_on: None,
         });
 
-        if func.is_async() {
+        if function.is_async() {
             todo!()
         }
 
-        let type_parameters = func.type_parameters(&mut func_env, checking_data);
+        let type_parameters = function.type_parameters(&mut func_env, checking_data);
 
-        if let Some(_) = func.this_constraint(&mut func_env, checking_data) {
+        if let Some(_) = function.this_constraint(&mut func_env, checking_data) {
             todo!();
         } else {
             // TODO inferred
         }
 
         // TODO could reuse existing if hoisted
-        let synthesized_parameters = func.parameters(&mut func_env, checking_data);
+        let synthesized_parameters = function.parameters(&mut func_env, checking_data);
 
-        let return_type_annotation = func.return_type_annotation(&mut func_env, checking_data);
+        let return_type_annotation = function.return_type_annotation(&mut func_env, checking_data);
 
         // TODO temp
-        let returned = if !func.is_declare() {
-            func.body(&mut func_env, checking_data);
+        let returned = if !function.is_declare() {
+            function.body(&mut func_env, checking_data);
 
             // TODO check with annotation
             let returned = func_env
@@ -1171,7 +1174,6 @@ impl<T: ContextType> Context<T> {
             }
         }
 
-        let get_set = func.get_set_generator_or_none();
         let func_ty = FunctionType {
             type_parameters,
             return_type: returned,
@@ -1179,11 +1181,11 @@ impl<T: ContextType> Context<T> {
             closed_over_references,
             parameters: synthesized_parameters,
             constant_id: None,
-            kind: FunctionKind::Arrow { get_set },
-            id: func.id(),
+            kind: FunctionKind::Arrow,
+            id: function.id(),
         };
 
-        let id = register_behavior.function(func, func_ty, self, &mut checking_data.types);
+        let id = register_behavior.function(function, func_ty, self, &mut checking_data.types);
 
         if let Some(events) = self.context_type.get_events() {
             // TODO create function object
@@ -1715,6 +1717,7 @@ impl<T: ContextType> Context<T> {
         }
     }
 
+    /// TODO remove types
     pub(crate) fn declare_variable<'a>(
         &mut self,
         name: &'a str,
@@ -1722,7 +1725,7 @@ impl<T: ContextType> Context<T> {
         variable_ty: TypeId,
         types: &mut TypeStore,
     ) -> Result<TypeId, CannotRedeclareVariable<'a>> {
-        let id = crate::VariableId(declared_at.source_id, declared_at.start);
+        let id = crate::VariableId(declared_at.source, declared_at.start);
 
         let kind = VariableMutability::Constant;
         let variable = Variable {

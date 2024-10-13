@@ -186,7 +186,7 @@ impl BinarySerializable for Span {
         buf.extend_from_slice(&TryInto::<u32>::try_into(self.end).unwrap().to_le_bytes());
     }
 
-    fn deserialize<I: Iterator<Item = u8>>(iter: &mut I, source_id: SourceId) -> Self {
+    fn deserialize<I: Iterator<Item = u8>>(iter: &mut I, source: SourceId) -> Self {
         let start: u32 = u32::from_le_bytes([
             iter.next().unwrap(),
             iter.next().unwrap(),
@@ -202,11 +202,7 @@ impl BinarySerializable for Span {
         ])
         .into();
 
-        Span {
-            start,
-            end,
-            source_id,
-        }
+        Span { start, end, source }
     }
 }
 

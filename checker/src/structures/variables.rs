@@ -13,7 +13,7 @@ pub struct Variable {
 
 impl Variable {
     pub(crate) fn get_id(&self) -> crate::VariableId {
-        crate::VariableId(self.declared_at.source_id, self.declared_at.start)
+        crate::VariableId(self.declared_at.source, self.declared_at.start)
     }
 }
 

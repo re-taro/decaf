@@ -146,7 +146,7 @@ impl TypeStore {
         id
     }
 
-    pub(crate) fn get_type_by_id(&self, id: TypeId) -> &Type {
+    pub fn get_type_by_id(&self, id: TypeId) -> &Type {
         &self.types[id.0 as usize]
     }
 
@@ -207,11 +207,9 @@ impl TypeStore {
                 // TODO
                 closed_over_references: Default::default(),
                 // TODO
-                kind: crate::types::FunctionKind::Arrow {
-                    get_set: crate::GetSetGeneratorOrNone::None,
-                },
+                kind: crate::types::FunctionKind::Arrow,
                 constant_id,
-                id: crate::FunctionId(declared_at.source_id, declared_at.start),
+                id: crate::FunctionId(declared_at.source, declared_at.start),
             },
             super::FunctionNature::Source(None),
         ))

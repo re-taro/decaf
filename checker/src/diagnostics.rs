@@ -43,16 +43,16 @@ impl Diagnostic {
         use either::{Left, Right};
         match self {
             Diagnostic::Global { .. } => Left(Left(iter::empty())),
-            Diagnostic::Position { position: span, .. } => Left(Right(iter::once(span.source_id))),
+            Diagnostic::Position { position: span, .. } => Left(Right(iter::once(span.source))),
             Diagnostic::PositionWithAdditionLabels {
                 position: pos,
                 labels,
                 ..
             } => Right(
-                iter::once(pos.source_id).chain(
+                iter::once(pos.source).chain(
                     labels
                         .iter()
-                        .flat_map(|(_, span)| span.as_ref().map(|span| span.source_id)),
+                        .flat_map(|(_, span)| span.as_ref().map(|span| span.source)),
                 ),
             ),
         }
@@ -359,7 +359,7 @@ mod defined_errors_and_warnings {
                         parameter_position,
                         call_site,
                     } => Diagnostic::PositionWithAdditionLabels {
-                        reason: "Parameter missing".into(),
+                        reason: "Missing argument".into(),
                         position: call_site,
                         kind: super::DiagnosticKind::Error,
                         labels: vec![(
@@ -374,7 +374,13 @@ mod defined_errors_and_warnings {
                             kind: super::DiagnosticKind::Error,
                         }
                     }
-                    FunctionCallingError::NotCallable { calling } => todo!(),
+                    FunctionCallingError::NotCallable { calling, call_site } => {
+                        Diagnostic::Position {
+                            reason: format!("Cannot call type {calling}"),
+                            position: call_site,
+                            kind: super::DiagnosticKind::Error,
+                        }
+                    }
                     //  Diagnostic::Position {
                     // 	reason: format!("Cannot call {}", calling),
                     // 	position: at,
