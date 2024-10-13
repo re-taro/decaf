@@ -3,13 +3,15 @@
     unused_variables,
     unused_mut,
     dead_code,
-    irrefutable_let_patterns
+    irrefutable_let_patterns,
+    deprecated
 )]
 
 mod behavior;
 pub mod context;
 pub mod diagnostics;
 pub mod events;
+pub mod range_map;
 mod serialization;
 mod settings;
 pub mod structures;
@@ -102,31 +104,15 @@ impl<'a, T: crate::FSResolver> ModuleData<'a, T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, binary_serialize_derive::BinarySerializable)]
-pub struct VariableId(pub Span);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, binary_serialize_derive::BinarySerializable)]
+pub struct VariableId(pub SourceId, pub u32);
 
-#[derive(Debug, PartialEq, Eq, Clone, binary_serialize_derive::BinarySerializable)]
-pub struct FunctionId(pub Span);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, binary_serialize_derive::BinarySerializable)]
+pub struct FunctionId(pub SourceId, pub u32);
 
 impl FunctionId {
     /// For inferred restrictions...
-    pub const NULL: Self = Self(Span::NULL_SPAN);
-}
-
-// TODO temp
-impl std::hash::Hash for VariableId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.start.hash(state);
-        self.0.end.hash(state);
-    }
-}
-
-// TODO temp
-impl std::hash::Hash for FunctionId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.start.hash(state);
-        self.0.end.hash(state);
-    }
+    pub const NULL: Self = Self(SourceId::NULL, 0);
 }
 
 pub enum TruthyFalsy {
@@ -155,6 +141,9 @@ pub struct CheckingData<'a, T> {
 
     // pub(crate) events: EventsStore,
     pub types: TypeStore,
+
+    /// Do not repeat emitting unimplemented parts
+    unimplemented_items: HashSet<&'static str>,
 }
 
 impl<'a, T: crate::FSResolver> CheckingData<'a, T> {
@@ -171,7 +160,7 @@ impl<'a, T: crate::FSResolver> CheckingData<'a, T> {
             modules,
             existing_contexts: Default::default(),
             types: Default::default(),
-            // events: Default::default(),
+            unimplemented_items: Default::default(),
         }
     }
 
@@ -227,17 +216,19 @@ impl<'a, T: crate::FSResolver> CheckingData<'a, T> {
 
     /// TODO temp, needs better place
     pub fn raise_unimplemented_error(&mut self, item: &'static str, span: Span) {
-        self.diagnostics_container
-            .add_warning(TypeCheckWarning::Unimplemented {
-                thing: item,
-                at: span,
-            })
+        if self.unimplemented_items.insert(item) {
+            self.diagnostics_container
+                .add_warning(TypeCheckWarning::Unimplemented {
+                    thing: item,
+                    at: span,
+                });
+        }
     }
 
     pub fn add_expression_mapping(&mut self, span: Span, instance: Instance) {
         self.type_mappings
             .expressions_to_instances
-            .insert(HashableSpan(span), instance);
+            .push(span, instance);
     }
 
     pub fn check_satisfies(
@@ -259,21 +250,23 @@ impl<'a, T: crate::FSResolver> CheckingData<'a, T> {
             &self.types,
         );
         if let SubTypeResult::IsNotSubType(_) = result {
+            let expected = diagnostics::TypeStringRepresentation::from_type_id(
+                to_satisfy,
+                &environment.into_general_context(),
+                &self.types,
+                false,
+            );
+            let found = diagnostics::TypeStringRepresentation::from_type_id(
+                expr_ty,
+                &environment.into_general_context(),
+                &self.types,
+                false,
+            );
             self.diagnostics_container
                 .add_error(TypeCheckError::NotSatisfied {
                     at: pos,
-                    expected: diagnostics::TypeStringRepresentation::from_type_id(
-                        to_satisfy,
-                        &environment.into_general_environment(),
-                        &self.types,
-                        false,
-                    ),
-                    found: diagnostics::TypeStringRepresentation::from_type_id(
-                        expr_ty,
-                        &environment.into_general_environment(),
-                        &self.types,
-                        false,
-                    ),
+                    expected,
+                    found,
                 })
         }
     }

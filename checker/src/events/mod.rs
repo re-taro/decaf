@@ -121,6 +121,9 @@ pub enum Event {
         /// This is also for the specialization (somehow)
         referenced_in_scope_as: TypeId,
     },
+    CreatesClosure {
+        id: TypeId,
+    },
     // Registration(Registration),
 }
 
@@ -199,7 +202,7 @@ pub(crate) fn apply_event(
             // );
 
             if initialization {
-                environment.register_property(on, under, new);
+                environment.register_property(on, under, new, true);
             } else {
                 match new {
                     Property::Value(new) => {
@@ -356,6 +359,7 @@ pub(crate) fn apply_event(
         Event::Repeatedly { n, with } => {
             todo!()
         }
+        Event::CreatesClosure { id } => {}
     }
     None
 }

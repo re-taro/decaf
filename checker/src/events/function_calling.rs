@@ -35,9 +35,10 @@ pub enum FunctionCallingError {
         restriction: Option<(Span, TypeStringRepresentation)>,
     },
     MissingArgument {
-        parameter_pos: Span,
+        parameter_position: Span,
+        call_site: Span,
     },
-    ExtraArguments {
+    ExcessArguments {
         count: usize,
         position: Span,
     },
@@ -51,11 +52,14 @@ pub enum FunctionCallingError {
     },
 }
 
+pub struct InfoDiagnostic(pub String);
+
 /// TODO *result* name bad
 pub struct FunctionCallResult {
     pub called: Option<FunctionId>,
     pub returned_type: TypeId,
-    pub warnings: (),
+    // TODO
+    pub warnings: Vec<InfoDiagnostic>,
 }
 
 #[derive(Debug, Default, Clone, Copy, binary_serialize_derive::BinarySerializable)]
@@ -120,7 +124,7 @@ impl FunctionType {
                                 );
 
                                 match type_is_subtype {
-                                    SubTypeResult::IsSubtype => {}
+                                    SubTypeResult::IsSubType => {}
                                     SubTypeResult::IsNotSubType(_) => {
                                         todo!("generic argument does not match restriction")
                                     }
@@ -189,7 +193,13 @@ impl FunctionType {
             CalledWithNew::New { import_new } => import_new,
             CalledWithNew::SpecialSuperCall { .. } => {
                 let ty = this_argument.unwrap();
-                crate::utils::notify!("This argument {}", environment.debug_type(ty, types));
+                let on = crate::types::printing::print_type(
+                    ty,
+                    types,
+                    &environment.into_general_context(),
+                    true,
+                );
+                crate::utils::notify!("This argument {}", on);
                 ty
             }
             CalledWithNew::None => TypeId::UNDEFINED_TYPE,
@@ -257,7 +267,7 @@ impl FunctionType {
                                 pos,
                                 crate::diagnostics::TypeStringRepresentation::from_type_id(
                                     restriction,
-                                    &environment.into_general_environment(),
+                                    &environment.into_general_context(),
                                     types,
                                     false,
                                 ),
@@ -269,14 +279,14 @@ impl FunctionType {
                             parameter_type:
                                 crate::diagnostics::TypeStringRepresentation::from_type_id(
                                     parameter.ty,
-                                    &environment.into_general_environment(),
+                                    &environment.into_general_context(),
                                     types,
                                     false,
                                 ),
                             argument_type:
                                 crate::diagnostics::TypeStringRepresentation::from_type_id(
                                     *argument_type,
-                                    &environment.into_general_environment(),
+                                    &environment.into_general_context(),
                                     types,
                                     false,
                                 ),
@@ -285,9 +295,12 @@ impl FunctionType {
                             restriction,
                         })
                     }
+                } else if let Some(value) = parameter.missing_value {
+                    todo!()
                 } else {
                     errors.push(FunctionCallingError::MissingArgument {
-                        parameter_pos: parameter.position.clone(),
+                        parameter_position: parameter.position.clone(),
+                        call_site: todo!(),
                     });
                 }
 
@@ -310,77 +323,13 @@ impl FunctionType {
                 // }
             }
 
-            // Optional parameters:
-            let parameters_length = self.parameters.parameters.len();
-
-            for ((idx, argument), parameter) in arguments
-                .iter()
-                .enumerate()
-                .skip(parameters_length)
-                .zip(self.parameters.optional_parameters.iter())
-            {
-                let (argument_type, argument_pos) =
-                    if let SynthesizedArgument::NonSpread { ty, position: pos } = argument {
-                        (ty, pos)
-                    } else {
-                        todo!()
-                    };
-
-                let result = type_is_subtype(
-                    parameter.ty,
-                    *argument_type,
-                    None,
-                    &mut seeding_context,
-                    environment,
-                    &types,
-                );
-
-                if let SubTypeResult::IsNotSubType(reasons) = result {
-                    let restriction = if let NonEqualityReason::GenericRestrictionMismatch {
-                        restriction,
-                        reason,
-                        pos,
-                    } = reasons
-                    {
-                        Some((
-                            pos,
-                            crate::diagnostics::TypeStringRepresentation::from_type_id(
-                                restriction,
-                                &environment.into_general_environment(),
-                                types,
-                                false,
-                            ),
-                        ))
-                    } else {
-                        None
-                    };
-                    errors.push(FunctionCallingError::InvalidArgumentType {
-                        parameter_type: crate::diagnostics::TypeStringRepresentation::from_type_id(
-                            parameter.ty,
-                            &environment.into_general_environment(),
-                            types,
-                            false,
-                        ),
-                        argument_type: crate::diagnostics::TypeStringRepresentation::from_type_id(
-                            *argument_type,
-                            &environment.into_general_environment(),
-                            types,
-                            false,
-                        ),
-                        argument_position: argument_pos.clone(),
-                        parameter_position: parameter.position.clone(),
-                        restriction,
-                    })
-                }
-            }
-
             // Rest parameters:
-            let optional_parameters_length = self.parameters.optional_parameters.len();
-            let all_parameters_length = parameters_length + optional_parameters_length;
-
-            if all_parameters_length < arguments.len() {
+            if self.parameters.parameters.len() < arguments.len() {
                 if let Some(ref rest_parameter) = self.parameters.rest_parameter {
-                    for (idx, argument) in arguments.iter().enumerate().skip(all_parameters_length)
+                    for (idx, argument) in arguments
+                        .iter()
+                        .enumerate()
+                        .skip(self.parameters.parameters.len())
                     {
                         let (argument_type, argument_pos) =
                             if let SynthesizedArgument::NonSpread { ty, position: pos } = argument {
@@ -420,7 +369,7 @@ impl FunctionType {
                                         pos,
                                         crate::diagnostics::TypeStringRepresentation::from_type_id(
                                             restriction,
-                                            &environment.into_general_environment(),
+                                            &environment.into_general_context(),
                                             types,
                                             false,
                                         ),
@@ -432,14 +381,14 @@ impl FunctionType {
                                 parameter_type:
                                     crate::diagnostics::TypeStringRepresentation::from_type_id(
                                         rest_parameter.item_type,
-                                        &environment.into_general_environment(),
+                                        &environment.into_general_context(),
                                         types,
                                         false,
                                     ),
                                 argument_type:
                                     crate::diagnostics::TypeStringRepresentation::from_type_id(
                                         *argument_type,
-                                        &environment.into_general_environment(),
+                                        &environment.into_general_context(),
                                         types,
                                         false,
                                     ),
@@ -451,7 +400,7 @@ impl FunctionType {
                     }
                 } else {
                     // TODO types.settings.allow_extra_arguments
-                    let mut left_over = arguments.iter().skip(all_parameters_length);
+                    let mut left_over = arguments.iter().skip(self.parameters.parameters.len());
                     let first = left_over.next().unwrap();
                     let mut count = 1;
                     let mut end = None;
@@ -464,7 +413,7 @@ impl FunctionType {
                     } else {
                         first.get_position()
                     };
-                    errors.push(FunctionCallingError::ExtraArguments { count, position });
+                    errors.push(FunctionCallingError::ExcessArguments { count, position });
                 }
             }
 
@@ -472,6 +421,38 @@ impl FunctionType {
 
             seeding_context
         };
+
+        if let Some(ref constant_id) = self.constant_id {
+            // TODO event
+            let result = crate::behavior::constant_functions::call_constant_function(
+                constant_id,
+                this_argument,
+                &arguments,
+                types,
+                environment,
+            );
+
+            if let Ok(returned) = result {
+                match returned {
+                    crate::behavior::constant_functions::ConstantResult::Value(returned_type) => {
+                        return Ok(FunctionCallResult {
+                            returned_type,
+                            warnings: Default::default(),
+                            called: None,
+                        });
+                    }
+                    crate::behavior::constant_functions::ConstantResult::Diagnostic(diagnostic) => {
+                        return Ok(FunctionCallResult {
+                            returned_type: TypeId::UNDEFINED_TYPE,
+                            warnings: vec![crate::events::InfoDiagnostic(diagnostic)],
+                            called: None,
+                        });
+                    }
+                }
+            } else {
+                crate::utils::notify!("Constant function calling failed, not constant params");
+            }
+        }
 
         for (reference, restriction) in self.closed_over_references.clone().into_iter() {
             match reference {
@@ -499,13 +480,13 @@ impl FunctionType {
                             reference,
                             requirement: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 restriction,
-                                &environment.into_general_environment(),
+                                &environment.into_general_context(),
                                 &types,
                                 false,
                             ),
                             found: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 current_value,
-                                &environment.into_general_environment(),
+                                &environment.into_general_context(),
                                 types,
                                 false,
                             ),
@@ -538,13 +519,13 @@ impl FunctionType {
                             reference,
                             requirement: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 restriction,
-                                &environment.into_general_environment(),
+                                &environment.into_general_context(),
                                 types,
                                 false,
                             ),
                             found: crate::diagnostics::TypeStringRepresentation::from_type_id(
                                 value_of_this,
-                                &environment.into_general_environment(),
+                                &environment.into_general_context(),
                                 types,
                                 false,
                             ),
@@ -577,7 +558,7 @@ impl FunctionType {
 
                 return Ok(FunctionCallResult {
                     returned_type,
-                    warnings: (),
+                    warnings: Default::default(),
                     called: Some(self.id.clone()),
                 });
             }
@@ -601,7 +582,7 @@ impl FunctionType {
 
         Ok(FunctionCallResult {
             returned_type,
-            warnings: (),
+            warnings: Default::default(),
             called: Some(self.id.clone()),
         })
     }

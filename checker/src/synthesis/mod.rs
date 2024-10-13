@@ -16,7 +16,6 @@ pub mod interfaces;
 pub mod module;
 pub mod object_literal;
 pub mod statements;
-pub mod type_references;
 pub mod variables;
 
 pub(crate) use expressions::{synthesize_expression, synthesize_multiple_expression};
