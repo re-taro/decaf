@@ -20,6 +20,9 @@ mod type_mappings;
 pub mod types;
 mod utils;
 
+pub const INTERNAL_DEFINITION_FILE_PATH: &str = "internal.d.ts";
+pub const INTERNAL_DEFINITION_FILE: &str = include_str!("../definitions/internal.d.ts");
+
 // TODO temp pub
 #[cfg(feature = "decaf-parser")]
 pub mod synthesis;
