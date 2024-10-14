@@ -180,24 +180,19 @@ impl From<NoEnvironmentSpecified> for Diagnostic {
 // Contains known internal errors and warnings
 // Contained here in a module to separate user facing
 mod defined_errors_and_warnings {
-    use crate::context::AssignmentError;
+    use crate::{behavior, context::AssignmentError};
     use source_map::Span;
 
-    use crate::{
-        events::FunctionCallingError,
-        structures::{self, operators::UnaryOperator},
-        Diagnostic,
-    };
+    use crate::{events::FunctionCallingError, Diagnostic};
     use std::path;
 
     use super::TypeStringRepresentation;
 
     /// Covers multiplication, subtraction, modulo etc
-    /// TODO something better?
-    pub struct InvalidMathematicalOperation {
+    pub struct InvalidMathematicalAndBitwiseOperation {
         pub(crate) lhs: TypeStringRepresentation,
         pub(crate) rhs: TypeStringRepresentation,
-        pub(crate) operator: structures::operators::BinaryOperator,
+        pub(crate) operator: behavior::operations::MathematicalAndBitwise,
         pub(crate) position: Span,
     }
 
@@ -223,13 +218,11 @@ mod defined_errors_and_warnings {
         AssignmentError(AssignmentError),
         InvalidComparison(TypeStringRepresentation, TypeStringRepresentation),
         InvalidAddition(TypeStringRepresentation, TypeStringRepresentation),
-        InvalidMathematicalOperation(InvalidMathematicalOperation),
-        InvalidBitwiseOperation(
+        InvalidMathematicalOperation(InvalidMathematicalAndBitwiseOperation),
+        InvalidUnaryOperation(
+            crate::behavior::operations::PureUnary,
             TypeStringRepresentation,
-            TypeStringRepresentation,
-            structures::operators::BitwiseOperators,
         ),
-        InvalidUnaryOperation(UnaryOperator, TypeStringRepresentation),
         ReturnedTypeDoesNotMatch {
             expected_return_type: TypeStringRepresentation,
             returned_type: TypeStringRepresentation,
@@ -500,17 +493,18 @@ mod defined_errors_and_warnings {
                 // }
                 TypeCheckError::InvalidComparison(_, _) => todo!(),
                 TypeCheckError::InvalidAddition(_, _) => todo!(),
-                TypeCheckError::InvalidMathematicalOperation(InvalidMathematicalOperation {
-                    lhs,
-                    rhs,
-                    operator,
-                    position,
-                }) => Diagnostic::Position {
+                TypeCheckError::InvalidMathematicalOperation(
+                    InvalidMathematicalAndBitwiseOperation {
+                        lhs,
+                        rhs,
+                        operator,
+                        position,
+                    },
+                ) => Diagnostic::Position {
                     reason: format!("Cannot {:?} {} and {}", operator, lhs, rhs),
                     position,
                     kind: super::DiagnosticKind::Error,
                 },
-                TypeCheckError::InvalidBitwiseOperation(_, _, _) => todo!(),
                 TypeCheckError::InvalidUnaryOperation(_, _) => todo!(),
                 TypeCheckError::TypeIsNotIndexable(_) => todo!(),
                 TypeCheckError::TypeIsNotIterable(_) => todo!(),
@@ -577,7 +571,7 @@ mod defined_errors_and_warnings {
                     expected,
                     found,
                 } => Diagnostic::Position {
-                    reason: format!("Expected {} found {}", expected, found),
+                    reason: format!("Expected {}, found {}", expected, found),
                     position: at,
                     kind: super::DiagnosticKind::Error,
                 },

@@ -4,7 +4,7 @@
 //! #### Sources:
 //! - Type reference of any source variable declarations is a [crate::TypeConstraint]
 //! - Type references in parameters are [crate::TypeConstraint]s
-//! - Type references in returns types are also [crate::TypeConstraint]s, because decaf uses the body to get the return
+//! - Type references in returns types are also [crate::TypeConstraint]s, because DECAF uses the body to get the return
 //! type
 //!
 //! #### Declarations
@@ -296,23 +296,22 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
                 }
             }
 
-            let true_res = synthesize_type_annotation(
+            let truthy_result = synthesize_type_annotation(
                 synthesize_condition(resolve_true),
                 environment,
                 checking_data,
             );
-            let false_res = synthesize_type_annotation(
+            let else_result = synthesize_type_annotation(
                 synthesize_condition(resolve_false),
                 environment,
                 checking_data,
             );
 
-            let ty = Type::Constructor(Constructor::ConditionalTernary {
-                on: condition,
-                true_res,
-                false_res,
-                // TODO
-                result_union: TypeId::ERROR_TYPE,
+            let ty = Type::Constructor(Constructor::ConditionalResult {
+                condition,
+                truthy_result,
+                else_result,
+                result_union: checking_data.types.new_or_type(truthy_result, else_result),
             });
 
             checking_data.types.register_type(ty)
@@ -392,12 +391,13 @@ fn synthesize_type_condition<S: ContextType, T: crate::FSResolver>(
         } => {
             let item = synthesize_type_annotation(ty, environment, checking_data);
             let extends = synthesize_type_annotation(extends, environment, checking_data);
-            let ty = Type::Constructor(Constructor::BinaryOperator {
-                operator: crate::structures::operators::BinaryOperator::InstanceOf,
-                lhs: item,
-                rhs: extends,
-            });
-            checking_data.types.register_type(ty)
+            todo!();
+            // let ty = Type::Constructor(Constructor::BinaryOperator {
+            // 	operator: crate::structures::operators::CanonicalBinaryOperator::InstanceOf,
+            // 	lhs: item,
+            // 	rhs: extends,
+            // });
+            // checking_data.types.register_type(ty)
         }
         // TODO requires a kind of strict instance of ???
         TypeCondition::Is { ty, is, position } => todo!(),
