@@ -12,16 +12,18 @@ use crate::{TSXKeyword, TSXToken};
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(feature = "self-rust-tokenize", derive(self_rust_tokenize::SelfRustTokenize))]
 pub enum BinaryOperator {
-    StrictEqual, StrictNotEqual, Equal, NotEqual,
-    Add, Subtract, Multiply, Divide, Modulo, Exponent,
-    GreaterThan, LessThan, LessThanEqual, GreaterThanEqual,
-
-    InstanceOf, In,
+	Add, Subtract, Multiply, Divide, Modulo, Exponent,
 
     BitwiseShiftLeft, BitwiseShiftRight, BitwiseShiftRightUnsigned,
     BitwiseAnd, BitwiseXOr, BitwiseOr,
+
+    StrictEqual, StrictNotEqual, Equal, NotEqual,
+    GreaterThan, LessThan, LessThanEqual, GreaterThanEqual,
+
     LogicalAnd, LogicalOr,
     NullCoalescing,
+
+    InstanceOf, In,
 
     /// Non standard
     Divides,
@@ -39,7 +41,7 @@ pub enum BinaryAssignmentOperator {
     AddAssign, SubtractAssign, MultiplyAssign, DivideAssign, ModuloAssign, ExponentAssign,
     LogicalAndAssign, LogicalOrAssign,
     BitwiseShiftLeftAssign, BitwiseShiftRightAssign, BitwiseShiftRightUnsigned,
-    BitwiseAndAssign, BitwiseXorAssign, BitwiseOrAssign,
+    BitwiseAndAssign, BitwiseXOrAssign, BitwiseOrAssign,
 }
 
 #[rustfmt::skip]
@@ -249,7 +251,7 @@ impl Operator for BinaryAssignmentOperator {
             BinaryAssignmentOperator::BitwiseShiftRightAssign => ">>=",
             BinaryAssignmentOperator::BitwiseShiftRightUnsigned => ">>>=",
             BinaryAssignmentOperator::BitwiseAndAssign => "&=",
-            BinaryAssignmentOperator::BitwiseXorAssign => "^=",
+            BinaryAssignmentOperator::BitwiseXOrAssign => "^=",
             BinaryAssignmentOperator::BitwiseOrAssign => "|=",
             BinaryAssignmentOperator::LogicalAndAssign => "&&=",
             BinaryAssignmentOperator::LogicalOrAssign => "||=",
@@ -336,7 +338,7 @@ impl From<BinaryAssignmentOperator> for BinaryOperator {
                 BinaryOperator::BitwiseShiftRightUnsigned
             }
             BinaryAssignmentOperator::BitwiseAndAssign => BinaryOperator::BitwiseAnd,
-            BinaryAssignmentOperator::BitwiseXorAssign => BinaryOperator::BitwiseXOr,
+            BinaryAssignmentOperator::BitwiseXOrAssign => BinaryOperator::BitwiseXOr,
             BinaryAssignmentOperator::BitwiseOrAssign => BinaryOperator::BitwiseOr,
         }
     }
@@ -356,7 +358,7 @@ impl TryFrom<&TSXToken> for BinaryAssignmentOperator {
             TSXToken::LogicalOrAssign => Ok(BinaryAssignmentOperator::LogicalOrAssign),
             TSXToken::BitwiseAndAssign => Ok(BinaryAssignmentOperator::BitwiseAndAssign),
             TSXToken::BitwiseOrAssign => Ok(BinaryAssignmentOperator::BitwiseOrAssign),
-            TSXToken::BitwiseXorAssign => Ok(BinaryAssignmentOperator::BitwiseXorAssign),
+            TSXToken::BitwiseXorAssign => Ok(BinaryAssignmentOperator::BitwiseXOrAssign),
             TSXToken::BitwiseShiftLeftAssign => {
                 Ok(BinaryAssignmentOperator::BitwiseShiftLeftAssign)
             }
@@ -478,7 +480,7 @@ pub(crate) const COMMA_PRECEDENCE: u8 = 1;
 pub(crate) const MEMBER_ACCESS_PRECEDENCE: u8 = 18;
 pub(crate) const OPTIONAL_CHAINING_PRECEDENCE: u8 = 18;
 pub(crate) const INDEX_PRECEDENCE: u8 = 18;
-pub(crate) const TERNARY_PRECEDENCE: u8 = 4;
+pub(crate) const CONDITIONAL_TERNARY_PRECEDENCE: u8 = 2;
 pub(crate) const FUNCTION_CALL_PRECEDENCE: u8 = 18;
 pub(crate) const CONSTRUCTOR_PRECEDENCE: u8 = 18;
 pub(crate) const CONSTRUCTOR_WITHOUT_PARENTHESIS_PRECEDENCE: u8 = 17;

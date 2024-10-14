@@ -11,9 +11,12 @@ mod specification {
     include!(concat!(env!("OUT_DIR"), "/specification.rs"));
 }
 
-const MAIN_DEF_D_TS: &str = include_str!("../definitions/main.d.ts");
-
-fn check_errors(code: &'static str, expected_diagnostics: &[&'static str]) {
+fn check_errors(
+    heading: &'static str,
+    line: usize,
+    code: &'static str,
+    expected_diagnostics: &[&'static str],
+) {
     let mut fs = parser::source_map::MapFileStore::default();
     let source =
         parser::source_map::FileSystem::new_source_id(&mut fs, PathBuf::default(), code.to_owned());
@@ -28,8 +31,8 @@ fn check_errors(code: &'static str, expected_diagnostics: &[&'static str]) {
 
     let res = checker::synthesis::module::synthesize_module_root(
         &module,
-        std::iter::once("main.d.ts".into()).collect(),
-        |_| Some(MAIN_DEF_D_TS.to_owned()),
+        std::iter::once(checker::INTERNAL_DEFINITION_FILE_PATH.into()).collect(),
+        |_| Some(checker::INTERNAL_DEFINITION_FILE.to_owned()),
     );
     let (diagnostics, ..) = res;
 
@@ -46,5 +49,11 @@ fn check_errors(code: &'static str, expected_diagnostics: &[&'static str]) {
         })
         .collect();
 
-    pretty_assertions::assert_eq!(diagnostics, expected_diagnostics)
+    pretty_assertions::assert_eq!(
+        diagnostics,
+        expected_diagnostics,
+        "issue with {}, specification:{}",
+        heading,
+        line
+    )
 }

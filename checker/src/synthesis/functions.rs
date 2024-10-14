@@ -295,7 +295,7 @@ pub(super) fn type_function_parameters_from_reference<T: crate::FSResolver>(
             // TODO temp for performs bodies
             let parameter_type = if let Some(name) = &parameter.name {
                 register_variable(
-                    name.get_ast(),
+                    name.get_ast_ref(),
                     environment,
                     checking_data,
                     crate::context::VariableRegisterBehavior::FunctionParameter {
@@ -311,7 +311,7 @@ pub(super) fn type_function_parameters_from_reference<T: crate::FSResolver>(
             let name = parameter
                 .name
                 .as_ref()
-                .map(WithComment::get_ast)
+                .map(WithComment::get_ast_ref)
                 .map(get_parameter_name)
                 .unwrap_or_else(|| format!("parameter{}", idx));
 
@@ -379,13 +379,13 @@ fn synthesize_function_parameters<T: crate::FSResolver>(
                 .map(|reference| synthesize_type_annotation(reference, environment, checking_data));
 
             let param_type = register_variable(
-                parameter.name.get_ast(),
+                parameter.name.get_ast_ref(),
                 environment,
                 checking_data,
                 crate::context::VariableRegisterBehavior::FunctionParameter { annotation },
                 annotation,
             );
-            let name = param_name_to_string(parameter.name.get_ast());
+            let name = param_name_to_string(parameter.name.get_ast_ref());
 
             let missing_value = match &parameter.additionally {
                 Some(parser::functions::ParameterData::Optional) => Some(TypeId::UNDEFINED_TYPE),

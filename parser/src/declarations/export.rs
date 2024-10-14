@@ -125,7 +125,7 @@ impl ASTNode for ExportDeclaration {
                     })
                 }
                 Token(token, _) => {
-                    unimplemented!("Token after export '{:?}'", token)
+                    todo!("Token after export '{:?}'", token)
                 }
             }
         }

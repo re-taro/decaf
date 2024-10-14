@@ -243,10 +243,17 @@ impl ASTNode for ObjectLiteralMember {
                     Some(Token(TSXToken::Comma | TSXToken::CloseBrace, _))
                 ) {
                     // TODO fix
-                    if let PropertyKey::Ident(name, position, _) = key.unwrap_ast() {
+                    if let PropertyKey::Ident(name, position, _) = key.get_ast() {
                         Ok(Self::Shorthand(name, position))
                     } else {
-                        todo!()
+                        let Token(found, position) = reader.next().unwrap();
+                        Err(ParseError::new(
+                            ParseErrors::UnexpectedToken {
+                                expected: &[TSXToken::Colon],
+                                found,
+                            },
+                            position,
+                        ))
                     }
                 } else {
                     reader.expect_next(TSXToken::Colon)?;
@@ -286,7 +293,7 @@ impl ASTNode for ObjectLiteralMember {
 
     fn get_position(&self) -> Cow<Span> {
         match self {
-            Self::Method(..) => todo!(),
+            Self::Method(method) => method.get_position(),
             Self::Shorthand(_, pos)
             | Self::Property(_, _, pos)
             | Self::SpreadExpression(_, pos) => Cow::Borrowed(pos),

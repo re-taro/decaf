@@ -30,7 +30,7 @@ impl ASTNode for VariableIdentifier {
     fn get_position(&self) -> Cow<Span> {
         match self {
             VariableIdentifier::Standard(_, span) => Cow::Borrowed(span),
-            VariableIdentifier::Cursor(_) => todo!(),
+            VariableIdentifier::Cursor(_) => Cow::Owned(Span::NULL_SPAN),
         }
     }
 
@@ -315,7 +315,7 @@ pub enum ObjectDestructuringField<T: VariableFieldKind> {
     /// `{ x: y }`
     Map {
         from: PropertyKey<crate::property_key::AlwaysPublic>,
-        variable_name: WithComment<VariableField<T>>,
+        name: WithComment<VariableField<T>>,
         default_value: T::OptionalExpression,
         position: Span,
     },
@@ -368,7 +368,7 @@ impl<U: VariableFieldKind> ASTNode for ObjectDestructuringField<U> {
                         };
                     Ok(Self::Map {
                         from: key,
-                        variable_name,
+                        name: variable_name,
                         default_value,
                         position,
                     })
@@ -414,7 +414,7 @@ impl<U: VariableFieldKind> ASTNode for ObjectDestructuringField<U> {
             }
             Self::Map {
                 from,
-                variable_name,
+                name: variable_name,
                 default_value,
                 ..
             } => {
@@ -466,7 +466,7 @@ impl<U: VariableFieldKind> ASTNode for ArrayDestructuringField<U> {
                     name_position
                 }
             }
-            ArrayDestructuringField::None => todo!(),
+            ArrayDestructuringField::None => Cow::Owned(Span::NULL_SPAN),
         }
     }
 
@@ -553,13 +553,13 @@ impl Visitable for VariableField<VariableFieldInSourceCode> {
                         data,
                         chain,
                     );
-                    match field.get_ast() {
+                    match field.get_ast_ref() {
                         ObjectDestructuringField::Spread(_, _name) => {}
                         ObjectDestructuringField::Name(_name, default_value) => {
                             default_value.visit(visitors, data, settings, chain);
                         }
                         ObjectDestructuringField::Map {
-                            variable_name,
+                            name: variable_name,
                             default_value,
                             ..
                         } => {
@@ -619,7 +619,7 @@ impl Visitable for VariableField<VariableFieldInSourceCode> {
                             default_value.visit_mut(visitors, data, settings, chain);
                         }
                         ObjectDestructuringField::Map {
-                            variable_name,
+                            name: variable_name,
                             default_value,
                             ..
                         } => {
