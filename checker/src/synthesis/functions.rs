@@ -639,7 +639,7 @@ pub(super) fn type_function_reference<T: crate::FSResolver, S: ContextType>(
                             this_ty: on_interface.unwrap(),
                         };
                         synthesize_block(&block.0, environment, checking_data);
-                        (mem::take(&mut environment.context_type.events), None)
+                        (mem::take(&mut environment.facts.events), None)
                     }
                     Performs::Const(id) => (Default::default(), Some(id)),
                     Performs::None => (Default::default(), Default::default()),

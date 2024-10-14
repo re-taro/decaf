@@ -4,7 +4,7 @@
 //! #### Sources:
 //! - Type reference of any source variable declarations is a [crate::TypeConstraint]
 //! - Type references in parameters are [crate::TypeConstraint]s
-//! - Type references in returns types are also [crate::TypeConstraint]s, because DECAF uses the body to get the return
+//! - Type references in returns types are also [crate::TypeConstraint]s, because ezno uses the body to get the return
 //! type
 //!
 //! #### Declarations
@@ -61,7 +61,7 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
             .new_constant_type(Constant::Boolean(value.clone())),
         TypeAnnotation::Name(name, _) => match name.as_str() {
             "any" => checking_data.types.new_any_parameter(environment),
-            "this" => environment.get_value_of_this(&mut checking_data.types),
+            "this" => todo!(), // environment.get_value_of_this(&mut checking_data.types),
             "self" => TypeId::THIS_ARG,
             name => {
                 match environment.get_type_from_name(name) {
@@ -231,7 +231,8 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
 
                         keys.insert(idx_ty);
                         environment
-                            .properties
+                            .facts
+                            .current_properties
                             .entry(obj)
                             .or_default()
                             .push((idx_ty, Property::Value(item_ty)));
@@ -246,7 +247,8 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
             let length_value = checking_data.types.new_constant_type(constant);
 
             environment
-                .properties
+                .facts
+                .current_properties
                 .entry(obj)
                 .or_default()
                 .push((TypeId::LENGTH_AS_STRING, Property::Value(length_value)));

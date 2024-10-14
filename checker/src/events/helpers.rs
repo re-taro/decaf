@@ -20,7 +20,7 @@ pub(crate) fn get_return_from_events<'a>(
         if let Event::Return { returned } = event {
             return ReturnedTypeFromBlock::Returned(*returned);
         } else if let Event::Conditionally {
-            on,
+            condition: on,
             events_if_truthy,
             else_events,
         } = event
