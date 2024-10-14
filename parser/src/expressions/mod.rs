@@ -21,9 +21,9 @@ use self::{
 
 use super::{
     operators::{
-        BinaryOperator, Operator, UnaryOperator, COMMA_PRECEDENCE, CONSTRUCTOR_PRECEDENCE,
-        CONSTRUCTOR_WITHOUT_PARENTHESIS_PRECEDENCE, INDEX_PRECEDENCE, MEMBER_ACCESS_PRECEDENCE,
-        PARENTHESIZED_EXPRESSION_AND_LITERAL_PRECEDENCE, TERNARY_PRECEDENCE,
+        BinaryOperator, Operator, UnaryOperator, COMMA_PRECEDENCE, CONDITIONAL_TERNARY_PRECEDENCE,
+        CONSTRUCTOR_PRECEDENCE, CONSTRUCTOR_WITHOUT_PARENTHESIS_PRECEDENCE, INDEX_PRECEDENCE,
+        MEMBER_ACCESS_PRECEDENCE, PARENTHESIZED_EXPRESSION_AND_LITERAL_PRECEDENCE,
     },
     tokens::token_as_identifier,
     ASTNode, Block, FunctionBase, JSXRoot, ParseError, ParseOptions, Span, TSXToken, Token,
@@ -143,7 +143,7 @@ pub enum Expression {
         position: Span,
     },
     /// e.g `... ? ... ? ...`
-    TernaryExpression {
+    ConditionalTernaryExpression {
         condition: Box<Expression>,
         truthy_result: Box<Expression>,
         falsy_result: Box<Expression>,
@@ -212,7 +212,7 @@ impl ASTNode for Expression {
             Self::Assignment { lhs, rhs, .. } => {
                 Cow::Owned(lhs.get_position().union(&rhs.get_position()))
             }
-            Self::TernaryExpression {
+            Self::ConditionalTernaryExpression {
                 condition,
                 falsy_result,
                 ..
@@ -553,10 +553,10 @@ impl Expression {
                 Expression::JSXRoot(root)
             }
             Token(TSXToken::TemplateLiteralStart, start_pos) => {
-                return TemplateLiteral::from_reader_sub_start_with_tag(
+                let template_literal = TemplateLiteral::from_reader_sub_start_with_tag(
                     reader, state, settings, None, start_pos,
-                )
-                .map(Expression::TemplateLiteral);
+                )?;
+                Expression::TemplateLiteral(template_literal)
             }
             Token(TSXToken::Keyword(TSXKeyword::Function), span) => {
                 let header = FunctionHeader::VirginFunctionHeader {
@@ -730,7 +730,7 @@ impl Expression {
                 }
                 TSXToken::QuestionMark => {
                     if AssociativityDirection::RightToLeft
-                        .should_return(parent_precedence, TERNARY_PRECEDENCE)
+                        .should_return(parent_precedence, CONDITIONAL_TERNARY_PRECEDENCE)
                     {
                         return Ok(top);
                     }
@@ -738,7 +738,7 @@ impl Expression {
                     let lhs = Self::from_reader(reader, state, settings)?;
                     reader.expect_next(TSXToken::Colon)?;
                     let rhs = Self::from_reader(reader, state, settings)?;
-                    top = Expression::TernaryExpression {
+                    top = Expression::ConditionalTernaryExpression {
                         condition: Box::new(top),
                         truthy_result: Box::new(lhs),
                         falsy_result: Box::new(rhs),
@@ -941,7 +941,7 @@ impl Expression {
                             reader,
                             state,
                             settings,
-                            parent_precedence,
+                            operator.precedence(),
                         )?;
 
                         top = Expression::BinaryOperation {
@@ -961,7 +961,7 @@ impl Expression {
                             reader,
                             state,
                             settings,
-                            parent_precedence,
+                            operator.precedence(),
                         )?;
                         top = Expression::BinaryAssignmentOperation {
                             lhs: top.try_into()?,
@@ -1024,7 +1024,7 @@ impl Expression {
                 CONSTRUCTOR_WITHOUT_PARENTHESIS_PRECEDENCE
             }
             Self::Index { .. } => INDEX_PRECEDENCE,
-            Self::TernaryExpression { .. } => TERNARY_PRECEDENCE,
+            Self::ConditionalTernaryExpression { .. } => CONDITIONAL_TERNARY_PRECEDENCE,
             Self::PrefixComment(_, expression, _) | Self::PostfixComment(expression, _, _) => {
                 expression.get_precedence()
             }
@@ -1274,17 +1274,32 @@ impl Expression {
             Self::TemplateLiteral(template_literal) => {
                 template_literal.to_string_from_buffer(buf, settings, depth)
             }
-            Self::TernaryExpression {
+            Self::ConditionalTernaryExpression {
                 condition,
                 truthy_result,
                 falsy_result,
                 ..
             } => {
-                condition.to_string_using_precedence(buf, settings, depth, TERNARY_PRECEDENCE);
+                condition.to_string_using_precedence(
+                    buf,
+                    settings,
+                    depth,
+                    CONDITIONAL_TERNARY_PRECEDENCE,
+                );
                 buf.push_str(if settings.pretty { " ? " } else { "?" });
-                truthy_result.to_string_using_precedence(buf, settings, depth, TERNARY_PRECEDENCE);
+                truthy_result.to_string_using_precedence(
+                    buf,
+                    settings,
+                    depth,
+                    CONDITIONAL_TERNARY_PRECEDENCE,
+                );
                 buf.push_str(if settings.pretty { " : " } else { ":" });
-                falsy_result.to_string_using_precedence(buf, settings, depth, TERNARY_PRECEDENCE);
+                falsy_result.to_string_using_precedence(
+                    buf,
+                    settings,
+                    depth,
+                    CONDITIONAL_TERNARY_PRECEDENCE,
+                );
             }
             Self::Null(..) => buf.push_str("null"),
             Self::IsExpression(is_expr) => is_expr.to_string_from_buffer(buf, settings, depth),
@@ -1474,7 +1489,7 @@ impl ASTNode for SpreadExpression {
         match self {
             SpreadExpression::Spread(_, pos) => Cow::Borrowed(pos),
             SpreadExpression::NonSpread(ast) => ast.get_position(),
-            SpreadExpression::Empty => todo!(),
+            SpreadExpression::Empty => Cow::Owned(Span::NULL_SPAN),
         }
     }
 
@@ -1491,9 +1506,7 @@ impl ASTNode for SpreadExpression {
                 let position = start_pos.union(&expression.get_position());
                 Ok(Self::Spread(expression, position))
             }
-            TSXToken::Comma => {
-                todo!("EMpty?");
-            }
+            TSXToken::Comma => Ok(Self::Empty),
             _ => Ok(Self::NonSpread(Expression::from_reader(
                 reader, state, settings,
             )?)),

@@ -91,7 +91,7 @@ impl FunctionBased for ArrowFunctionBase {
             parameters.rest_parameter.is_none(),
             parameters.parameters.as_slice(),
         ) {
-            if let VariableField::Name(name, ..) = name.get_ast() {
+            if let VariableField::Name(name, ..) = name.get_ast_ref() {
                 buf.push_str(name.as_str());
             } else {
                 parameters.to_string_from_buffer(buf, settings, depth);
@@ -182,7 +182,10 @@ impl ArrowFunction {
 
 /// For [ArrowFunction] and [crate::MatchArm] bodies
 #[derive(Debug, Clone, Eq, PartialEq, Visitable)]
-// #[cfg_attr(feature = "self-rust-tokenize", derive(self_rust_tokenize::SelfRustTokenize))]
+#[cfg_attr(
+    feature = "self-rust-tokenize",
+    derive(self_rust_tokenize::SelfRustTokenize)
+)]
 pub enum ExpressionOrBlock {
     Expression(Box<Expression>),
     Block(Block),

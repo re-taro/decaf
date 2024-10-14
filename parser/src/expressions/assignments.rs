@@ -109,13 +109,18 @@ impl TryFrom<Expression> for VariableOrPropertyAccess {
                 is_optional,
             } => {
                 if is_optional {
-                    todo!()
+                    // Still a proposal :(
+                    Err(ParseError::new(
+                        crate::ParseErrors::InvalidLHSAssignment,
+                        position,
+                    ))
+                } else {
+                    Ok(Self::PropertyAccess {
+                        parent,
+                        position,
+                        property,
+                    })
                 }
-                Ok(Self::PropertyAccess {
-                    parent,
-                    position,
-                    property,
-                })
             }
             Expression::Index {
                 indexer,
