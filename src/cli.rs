@@ -7,14 +7,15 @@ use std::{
     time::Instant,
 };
 
-use crate::utilities::print_to_cli;
+use crate::{error_handling::emit_decaf_diagnostic, utilities::print_to_cli};
 use argh::FromArgs;
+use parser::SourceId;
 // use checker::{
 // 	BuildOutput, Plugin, Project, TypeCheckSettings, TypeCheckingVisitorGenerators,
 // 	TypeDefinitionModulePath,
 // };
 
-/// decaf Compiler
+/// Decaf Compiler
 #[derive(FromArgs, Debug)]
 struct TopLevel {
     #[argh(subcommand)]
@@ -34,7 +35,7 @@ enum CompilerSubCommand {
     // Pack(Pack),
 }
 
-/// Display decaf information
+/// Display Decaf information
 #[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "info")]
 struct Info {}
@@ -140,40 +141,62 @@ pub fn run_cli<T: crate::FSResolver, U: crate::CLIInputResolver>(
         CompilerSubCommand::Info(_) => {
             crate::utilities::print_info();
         }
-        CompilerSubCommand::Build(_build_config) => {
-            todo!()
-            // let _output = crate::commands::build(fs_resolver, build_config);
+        CompilerSubCommand::Build(build_config) => {
+            let output = build_config.output.unwrap_or("decaf_output.js".into());
+            let (fs, output) = crate::commands::build(fs_resolver, &build_config.input, &output);
+            match output {
+                Ok(output) => {
+                    for output in output.outputs {
+                        std::fs::write(output.output_path, output.content).unwrap();
+                    }
+                    for diagnostic in output.temp_diagnostics {
+                        let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
+                        emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
+                    }
+                }
+                Err(diagnostics) => {
+                    for diagnostic in diagnostics {
+                        let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
+                        emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
+                    }
+                }
+            }
         }
         CompilerSubCommand::ASTExplorer(mut repl) => repl.run(fs_resolver, cli_input_resolver),
-        // CompilerSubCommand::Run(run_arguments) => {
-        // 	let build_arguments = BuildArguments {
-        // 		input: run_arguments.input,
-        // 		output: Some(run_arguments.output.clone()),
-        // 		minify: true,
-        // 		no_comments: true,
-        // 		source_maps: false,
-        // 		watch: false,
-        // 		timings: false,
-        // 	};
-        // 	let output = build(build_arguments);
-
-        // 	if output.is_ok() {
-        // 		Command::new("deno")
-        // 			.args(["run", "--allow-all", run_arguments.output.to_str().unwrap()])
-        // 			.spawn()
-        // 			.unwrap()
-        // 			.wait()
-        // 			.unwrap();
-        // 	}
-        // }
         CompilerSubCommand::Check(check_arguments) => {
             let CheckArguments {
                 input,
-                watch,
+                watch: _,
                 definition_file,
             } = check_arguments;
-            crate::commands::check(fs_resolver, input, definition_file, watch)
-        } // #[cfg(debug_assertions)]
+            let (fs, diagnostics, _others) =
+                crate::commands::check(fs_resolver, &input, definition_file.as_deref());
+            for diagnostic in diagnostics.into_iter() {
+                let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
+                emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
+            }
+        } // CompilerSubCommand::Run(run_arguments) => {
+          // 	let build_arguments = BuildArguments {
+          // 		input: run_arguments.input,
+          // 		output: Some(run_arguments.output.clone()),
+          // 		minify: true,
+          // 		no_comments: true,
+          // 		source_maps: false,
+          // 		watch: false,
+          // 		timings: false,
+          // 	};
+          // 	let output = build(build_arguments);
+
+          // 	if output.is_ok() {
+          // 		Command::new("deno")
+          // 			.args(["run", "--allow-all", run_arguments.output.to_str().unwrap()])
+          // 			.spawn()
+          // 			.unwrap()
+          // 			.wait()
+          // 			.unwrap();
+          // 	}
+          // }
+          // #[cfg(debug_assertions)]
           // CompilerSubCommand::Pack(Pack { input, output }) => {
           // 	let file = checker::definition_file_to_buffer(
           // 		&file_system_resolver,

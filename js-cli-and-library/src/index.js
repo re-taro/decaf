@@ -1,3 +1,3 @@
-import init, { initSync, build } from "../build/decaf_lib.js";
+import init, { initSync, build, check } from "../build/decaf_lib.js";
 
-export { init, initSync, build };
+export { init, initSync, build, check };
