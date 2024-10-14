@@ -120,10 +120,16 @@ jobs:
           filters: |
             parser:
               - 'parser/**'
+            checker:
+            - 'checker/**'
       - name: Build | Parser test
         if: steps.changes.outputs.parser == 'true'
         run: cargo test
         working-directory: parser
+      - name: Build | Test checker specification
+        if: steps.changes.outputs.checker == 'true'
+        run: cargo test
+        working-directory: checker/specification
       - name: Build | Basic test
         run: cargo test
   fuzzing:
