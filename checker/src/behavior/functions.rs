@@ -88,7 +88,10 @@ impl RegisterBehavior for RegisterOnExisting {
             .declared_at
             .clone();
         let variable_id = VariableId(variable_id.source, variable_id.start);
-        environment.variable_current_value.insert(variable_id, ty);
+        environment
+            .facts
+            .variable_current_value
+            .insert(variable_id, ty);
     }
 }
 

@@ -165,7 +165,9 @@ impl SynthesizeInterfaceBehavior for OnToType {
             }
             InterfaceValue::Value(value) => value,
         };
-        environment.register_property(self.0, under, Property::Value(ty), false)
+        environment
+            .facts
+            .register_property(self.0, under, Property::Value(ty), false)
     }
 
     fn interface_type(&self) -> Option<TypeId> {

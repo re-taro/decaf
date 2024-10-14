@@ -53,7 +53,7 @@ pub fn synthesize_template_literal<
         let mut static_parts = ObjectBuilder::new(
             Some(TypeId::ARRAY_TYPE),
             &mut checking_data.types,
-            environment,
+            &mut environment.facts,
         );
 
         // TODO position

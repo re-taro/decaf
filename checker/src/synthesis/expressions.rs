@@ -15,8 +15,9 @@ use crate::{
         functions::{RegisterAsType, RegisterOnExistingObject},
         objects::ObjectBuilder,
         operations::{
-            evaluate_logical_operation, evaluate_pure_binary_operation_handle_errors,
-            evaluate_pure_unary_operator, EqualityAndInequality, MathematicalAndBitwise, PureUnary,
+            evaluate_logical_operation_with_expression,
+            evaluate_pure_binary_operation_handle_errors, evaluate_pure_unary_operator,
+            EqualityAndInequality, MathematicalAndBitwise, PureUnary,
         },
         template_literal::synthesize_template_literal,
     },
@@ -127,7 +128,7 @@ pub(super) fn synthesize_expression<T: crate::FSResolver>(
             let mut basis = ObjectBuilder::new(
                 Some(TypeId::ARRAY_TYPE),
                 &mut checking_data.types,
-                environment,
+                &mut environment.facts,
             );
 
             for (idx, value) in elements.iter().enumerate() {
@@ -185,7 +186,7 @@ pub(super) fn synthesize_expression<T: crate::FSResolver>(
             | BinaryOperator::LogicalOr
             | BinaryOperator::NullCoalescing = operator
             {
-                return evaluate_logical_operation(
+                return evaluate_logical_operation_with_expression(
                     lhs_ty,
                     match operator {
                         BinaryOperator::LogicalAnd => crate::behavior::operations::Logical::And,
@@ -278,7 +279,6 @@ pub(super) fn synthesize_expression<T: crate::FSResolver>(
                             operator,
                             operand_type,
                             &mut checking_data.types,
-                            environment,
                         )
                         .unwrap(),
                     )
@@ -862,7 +862,7 @@ pub(super) fn synthesize_class_fields<T: crate::FSResolver>(
     let this = environment.get_value_of_this(&mut checking_data.types);
     for (under, mut expression) in fields {
         let new = synthesize_expression(&expression, environment, checking_data);
-        environment.context_type.events.push(Event::Setter {
+        environment.facts.events.push(Event::Setter {
             on: this,
             new: crate::types::properties::Property::Value(new),
             under,
@@ -909,7 +909,8 @@ pub(super) fn synthesize_object_literal<T: crate::FSResolver>(
     checking_data: &mut CheckingData<T>,
     environment: &mut Environment,
 ) -> TypeId {
-    let mut object_builder = ObjectBuilder::new(None, &mut checking_data.types, environment);
+    let mut object_builder =
+        ObjectBuilder::new(None, &mut checking_data.types, &mut environment.facts);
 
     for member in members.iter() {
         match member {
