@@ -4,7 +4,7 @@
 //! #### Sources:
 //! - Type reference of any source variable declarations is a [crate::TypeConstraint]
 //! - Type references in parameters are [crate::TypeConstraint]s
-//! - Type references in returns types are also [crate::TypeConstraint]s, because ezno uses the body to get the return
+//! - Type references in returns types are also [crate::TypeConstraint]s, because decaf uses the body to get the return
 //! type
 //!
 //! #### Declarations

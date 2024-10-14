@@ -26,7 +26,7 @@ impl ContextType for RootContext {
     }
 }
 
-const HEADER: &[u8] = b"EZNO\0CONTEXT\0FILE";
+const HEADER: &[u8] = b"DECAF\0CONTEXT\0FILE";
 
 impl Root {
     /// Merges two [RootEnvironments]. May be used for multiple `.d.ts` files

@@ -170,7 +170,7 @@ pub fn run_cli<T: crate::FSResolver, U: crate::CLIInputResolver>(
                 definition_file,
             } = check_arguments;
             let (fs, diagnostics, _others) =
-                crate::commands::check(fs_resolver, &input, definition_file.as_deref());
+                crate::commands::check(&fs_resolver, &input, definition_file.as_deref());
             for diagnostic in diagnostics.into_iter() {
                 let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
                 emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
