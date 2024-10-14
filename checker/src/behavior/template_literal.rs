@@ -43,7 +43,8 @@ pub fn synthesize_template_literal<
                         .types
                         .new_constant_type(Constant::String(value))
                 } else {
-                    todo!()
+                    crate::utils::notify!("Need to cast to string...");
+                    value
                 }
             }
         }

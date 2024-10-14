@@ -25,7 +25,10 @@ use parser::{type_annotations::*, ASTNode};
 
 use crate::{
     synthesis::functions::type_function_reference,
-    types::{properties::Property, Constant, Type},
+    types::{
+        poly_types::generic_type_arguments::StructureGenericArguments, properties::Property,
+        Constant, StructureGenerics, Type,
+    },
     types::{Constructor, TypeId},
     CheckingData,
 };
@@ -129,10 +132,10 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
                     .zip(arguments.iter().map(|type_annotation| {
                         synthesize_type_annotation(type_annotation, environment, checking_data)
                     }));
-                let ty = Type::Constructor(Constructor::StructureGenerics {
+                let ty = Type::Constructor(Constructor::StructureGenerics(StructureGenerics {
                     on: inner_type,
-                    with: with.collect(),
-                });
+                    arguments: todo!(),
+                }));
 
                 checking_data.types.register_type(ty)
             } else {
@@ -151,6 +154,7 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
             return_type,
             ..
         } => {
+            let position = parameters.position.union(&return_type.get_position());
             let function_type = type_function_reference(
                 type_parameters,
                 parameters,
@@ -158,13 +162,19 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
                 environment,
                 checking_data,
                 super::Performs::None,
-                parameters.position.union(&return_type.get_position()),
+                position.clone(),
                 crate::types::FunctionKind::Arrow,
                 None,
             );
-            checking_data
-                .types
-                .new_type_annotation_function_type(function_type)
+            // TODO bit messy
+            checking_data.types.new_function_type_annotation(
+                function_type.type_parameters,
+                function_type.parameters,
+                function_type.return_type,
+                position,
+                function_type.effects,
+                None,
+            )
         }
         TypeAnnotation::Readonly(type_annotation, _) => {
             let underlying_type =
@@ -186,10 +196,13 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
         TypeAnnotation::NamespacedName(_, _, _) => unimplemented!(),
         TypeAnnotation::ArrayLiteral(item_type, _) => {
             let item_type = synthesize_type_annotation(&*item_type, environment, checking_data);
-            let ty = Type::Constructor(Constructor::StructureGenerics {
+            let ty = Type::Constructor(Constructor::StructureGenerics(StructureGenerics {
                 on: TypeId::ARRAY_TYPE,
-                with: FromIterator::from_iter([(TypeId::T_TYPE, item_type)]),
-            });
+                arguments: StructureGenericArguments {
+                    type_arguments: FromIterator::from_iter([(TypeId::T_TYPE, item_type)]),
+                    closures: Default::default(),
+                },
+            }));
             checking_data.types.register_type(ty)
         }
         TypeAnnotation::ConstructorLiteral {
@@ -271,7 +284,7 @@ pub(super) fn synthesize_type_annotation<S: ContextType, T: crate::FSResolver>(
                 match prop {
                     crate::context::Logical::Pure(ty) => ty.as_get_type(),
                     crate::context::Logical::Or(_) => todo!(),
-                    crate::context::Logical::Implies(_, _) => todo!(),
+                    crate::context::Logical::Implies { .. } => todo!(),
                 }
             } else {
                 todo!("Error")
