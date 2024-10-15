@@ -1,3 +1,4 @@
 packages:
   - js-cli-and-library
   - js-based-plugin
+  - paper/**
