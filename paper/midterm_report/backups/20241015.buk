@@ -1,0 +1,49 @@
+\documentclass{classes/tyukan}
+
+\Year{令和６}
+
+\No{06}
+\Name{糸川 倫太朗}
+\Laboratory{青山研究室}
+
+\Theme{A JavaScript compiler and TypeScript checker with a focus on
+static analysis and runtime performance}
+\Keywords{JavaScript, TypeScript, compiler, static analysis}
+
+\begin{document}
+
+\paragraph{＜背景＞}
+昨今，Rust や Golang などのコンパイル型の言語を用いた JavaScript
+ツールチェインの開発が盛んだ．しかし，JS(TS) 以外の言語でのツールチェイン実装にはある課題がある．それは，型情報を扱う方法がないということだ．
+
+この課題に対するアプローチは，主に３つある．
+
+\begin{itemize}
+  \item TypeScript Compiler(\texttt{tsc}) の
+    \texttt{--isolatedDeclaration} を用いた並列な型推論
+  \item \texttt{tsc} の \texttt{--isolatedDeclaration} を用いたプロジェクトに型推論のサブセットを適用する
+  \item \texttt{tsc} を書き直す
+\end{itemize}
+
+１つ目の \texttt{tsc} を用いた方法は，\texttt{tsc} が TypeScript で実装されているため，
+JavaScript ランタイムの起動がボトルネックとなってしまう．\texttt{tsc} は linter や language
+server としても使われるため，この問題は深刻だ．
+
+２つ目の 型推論のサブセットを適用する方法は，\texttt{--isolatedDeclaration}
+によって，ファイル(JavaScript
+ではこれをモジュールとする)から関数やオブジェクトをエクスポートをする時，必ず型引数を強制する．そうすることで，モジュールをまたいだ型推論をする必要を減らし，
+Rust
+等で型推論機を実装する際の負荷を下げる方法だ．一見すると銀の弾丸の様に見える手法だが，
+厳密な型推論に推論機が依存してしまうことや，コンパイラが推論することで行えた最適化を行うことができなくなるなどの問題がある．
+
+以上の課題を踏まえて，３つ目の \texttt{tsc} を書き直す方法を採択した．
+
+\paragraph{＜目的＞}
+
+\paragraph{＜研究の概要＞}
+
+\paragraph{＜研究の現状＞}
+
+\paragraph{＜今後の方針＞}
+
+\end{document}
