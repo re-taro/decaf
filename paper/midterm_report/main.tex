@@ -43,9 +43,9 @@ TypeScript のパースは \texttt{oxc\_parser} を参考に実装する．
 図 \ref{fig:type_check_arch} は従来の TypeScript の型推論アーキテクチャである．
 \texttt{decaf} では，このアーキテクチャのうち型の合成と検査の部分が \texttt{tsc} と異なる．
 
-まず， \texttt{tsc} では型の合成と検査を同時に行うが， \texttt{decaf} では型の合成と検査を分離する．
-型の合成を分離したのは，TypeScript の AST を \texttt{decaf} の型合成機が解釈できる形（TypeID
-と呼ばれる）に変換する中間レイヤであり，本来型の合成機とは独立しているためである．
+\texttt{tsc} では型の合成と検査が同時に行われるが，\texttt{decaf} ではこれらの処理を分離する．
+型の合成とは，TypeScript の構文解析木（AST) を \texttt{decaf} の型合成機が解釈できる形（TypeID）に変換することである．
+\texttt{decaf} では．型検査に他の言語のアイデアを持ち込むために，AST を TypeID に変換するアーキテクチャを採用した．
 
 \texttt{decaf} では型合成機は，値と構造に関する情報を型として保持し，関数やブロックの振る舞いをイベントとしてエンコードする．
 これにより，プログラム実行時のヒープのような役割を型検査時に果たすことができる．
