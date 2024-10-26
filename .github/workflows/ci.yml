@@ -41,10 +41,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
         uses: Swatinem/rust-cache@v2.7.3
-      - name: Setup | taplo
-        run: cargo install taplo-cli
       - name: Build | Lint
-        run: taplo fmt --check **/*/Cargo.toml
+        uses: docker://docker.io/tamasfe/taplo:0.9.3
+        with:
+          args: fmt --check **/*/Cargo.toml
   clippy:
     name: Clippy [Linter]
     runs-on: ubuntu-latest
