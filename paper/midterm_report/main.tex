@@ -31,33 +31,28 @@ language server や静的解析機で使用した際，\texttt{tsc} と比較し
 TypeScript のパースは \texttt{oxc\_parser} を参考に実装する．
 型推論は \texttt{tsc} を参考に実装する．
 
-\texttt{decaf} では \texttt{tsc} と異なった型推論のアーキテクチャを提案する．
+\texttt{tsc} のボトルネックは大きく分けて，TypeScript のパースとその型検査である．
+TypeScript のパースについては，Rust で一からパーサを実装することである程度の速度改善が見られると期待した．
+一方で，型検査については調査の過程で分かったこととして，長年の実装の積み重ねの末にアルゴリズムは複雑化しており，
+メンテナンス性も低くレガシーなアルゴリズムによって動いていることが分かった．
+そこで，\texttt{decaf} では \texttt{tsc} と異なった型検査のアーキテクチャを提案する．
 
-\begin{figure}[h]
-  \centering
-  \includegraphics[width=0.9\columnwidth]{figures/type_check_arch.png}
-  \caption{\texttt{tsc} の型推論アーキテクチャ}
-  \label{fig:type_check_arch}
-\end{figure}
+\texttt{decaf} では，TypeScript の構文解析木（AST) を \texttt{decaf}
+の型検査機が解釈できる形（TypeID）に変換する．
+これにより，型検査に他の言語で実装されているモダンなアルゴリズムを適用できるようになる．
+この機構を便宜上「変換機」と呼称する．
 
-図 \ref{fig:type_check_arch} は従来の TypeScript の型推論アーキテクチャである．
-\texttt{decaf} では，このアーキテクチャのうち型の合成と検査の部分が \texttt{tsc} と異なる．
-
-\texttt{tsc} では型の合成と検査が同時に行われるが，\texttt{decaf} ではこれらの処理を分離する．
-型の合成とは，TypeScript の構文解析木（AST) を \texttt{decaf} の型合成機が解釈できる形（TypeID）に変換することである．
-\texttt{decaf} では．型検査に他の言語のアイデアを持ち込むために，型の合成した後で，型検査するアーキテクチャを採用した．
-
-\texttt{decaf} では型合成機は，値と構造に関する情報を型として保持し，関数やブロックの振る舞いをイベントとしてエンコードする．
+\texttt{decaf} では変換機は，値と構造に関する情報を型として保持し，関数やブロックの振る舞いをイベントとしてエンコードする．
 型やイベントは，AST の走査中に生成され，型検査機に渡され使用される．
 
-\texttt{decaf} では型検査機は，\texttt{tsc} と異なったアプローチを取る．
 \texttt{decaf} の型検査機では型を「その値が取りうる可能性の空間」として捉える．
-これにより，AST を走査しながら型の空間を広げていくことで，実行時に起こりうるすべての可能性を型チェック時に考慮できる．
+\texttt{decaf} では条件分岐やループに差し掛かった時，そのブロック内で取りうる型の空間を広げる．
+AST を走査しながら型の空間を広げていくことで，実行時に起こりうるすべての可能性を型チェック時に考慮できる．
 
 \paragraph{＜研究の現状＞}
 現在， \texttt{decaf} は TypeScript のほぼ全ての構文をパースできる．
 
-一方で型推論，検査は概要で述べたアーキテクチャに基づいて実装中である．
+一方で型検査は概要で述べたアーキテクチャに基づいて実装中である．
 
 \paragraph{＜今後の方針＞}
 サポートする構文を増やし，型推論の精度を向上させる．
