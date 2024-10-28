@@ -1,6 +1,6 @@
 ---
 title: TypeScript の型検査の仕組み（簡略版）
-hideInToc: true
+transition: fade
 ---
 
 <h1>TypeScript の型検査の仕組み（簡略版）</h1>
