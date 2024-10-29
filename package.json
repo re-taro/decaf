@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@9.7.0",
+  "packageManager": "pnpm@9.12.2",
   "author": "Rintaro Itokawa <me@re-taro.dev> (https://re-taro.dev)",
   "license": "UNLICENSED",
   "repository": {
@@ -11,6 +11,7 @@
     "url": "https://github.com/re-taro/decaf.git"
   },
   "devDependencies": {
-    "unbuild": "2.0.0"
+    "unbuild": "2.0.0",
+    "wrangler": "3.83.0"
   }
 }
