@@ -5,8 +5,8 @@ title: 比較：TypeScript と decaf の型検査の仕組み
 <h1>比較：TypeScript と decaf の型検査の仕組み</h1>
 <img
   class="mx-auto w-sm transition-width"
-  src="/figures/typescript_check_easy.png"
-  alt="TypeScript の型検査の仕組み（簡略版）"
+  src="/figures/decaf_check.png"
+  alt="decaf の型検査の仕組み"
 />
 
 <div class="grid grid-cols-2">
@@ -27,9 +27,8 @@ title: 比較：TypeScript と decaf の型検査の仕組み
   - シングルスレッド
     - <span v-mark="{ at: 1, color: 'red', type: 'underline' }">Rust によるマルチスレッド化</span>
   - レガシーな実装
-    - <span v-mark="{ at: 2, color: 'red', type: 'underline' }">現代的な型検査手法を実装できるアーキテクチャ</span>を設計
+    - <span v-mark="{ at: 2, color: 'red', type: 'underline' }">TyeID の導入</span>による現代的な型検査手法を実装できるアーキテクチャ
   - 型情報の重複保持
-    - <span v-mark="{ at: 3, color: 'red', type: 'underline' }">型情報を不可分に保持</span>することで、マルチスレッド化と重複排除を両立
-
+    - <span v-mark="{ at: 3, color: 'red', type: 'underline' }">型情報を不可分に保持</span>することで、重複を排除
   </div>
 </div>

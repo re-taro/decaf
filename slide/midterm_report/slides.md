@@ -40,11 +40,11 @@ src: ./pages/typescript_check_easy.md
 ---
 
 ---
-src: ./pages/comparison_tsc_decaf.md
+src: ./pages/decaf_check.md
 ---
 
 ---
-src: ./pages/decaf_check.md
+src: ./pages/comparison_tsc_decaf.md
 ---
 
 ---
