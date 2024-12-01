@@ -1,19 +1,55 @@
 #!/usr/bin/env node
-import { initSync, run_cli } from "../build/decaf_lib.js";
-import { readFileSync } from "node:fs";
+
+import { initSync, run_cli, parse_module, ReplSystem } from "../build/decaf_lib.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import * as readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 
 const wasmPath = new URL("./shared/decaf_lib_bg.wasm", import.meta.url);
-initSync(readFileSync(wasmPath));
+if (wasmPath.protocol === "https:") {
+    initSync(await fetch(wasmPath).then(response => response.arrayBuffer()))
+} else {
+    initSync(readFileSync(wasmPath));
+}
 
-const cli_arguments = typeof Deno !== "undefined" ? Deno.args : process.argv.slice(2);
+const onDeno = typeof Deno !== "undefined";
+const cliArguments = onDeno ? Deno.args : process.argv.slice(2);
 
-run_cli(cli_arguments, (path) => {
-  return readFileSync(path).toString()
-}, (prompt_msg) => {
-  if (typeof Deno !== "undefined") {
-    return prompt(`${prompt_msg}>`)
-  } else {
-    console.error("Prompt not supported in NodeJS (sync issue)");
-    throw new Error("Prompt not supported in NodeJS")
-  }
-});
+function readFile(path) {
+    return readFileSync(path).toString();
+}
+
+function writeFile(path, content) {
+    writeFileSync(path, content)
+}
+
+// Fix because REPL requires syncronous stdin input which isn't
+// TODO also ast-explorer
+if (cliArguments.length === 1 && (cliArguments[0] === "repl" || cliArguments[0] === "ast-explorer")) {
+    const kind = cliArguments[0];
+    const rl = readline.createInterface({ input, output });
+
+    if (kind === "repl") {
+        console.log("Entering REPL");
+        const system = ReplSystem.new_system({}, (path) => { console.trace(path); return "" });
+        while (true) {
+            const answer = await rl.question('> ');
+            if (answer.length === 0 || answer === ".exit" || answer === "close()") {
+                break
+            }
+            system.execute_statement(answer);
+        }
+    } else if (kind === "ast-explorer") {
+        console.log("Entering ast-explorer");
+        while (true) {
+            const answer = await rl.question('> ');
+            if (answer.length === 0 || answer === ".exit" || answer === "close()") {
+                break
+            }
+            console.dir(parse_module(answer), { depth: Number.POSITIVE_INFINITY });
+        }
+    }
+    rl.close();
+} else {
+    run_cli(cliArguments, readFile, writeFile);
+}

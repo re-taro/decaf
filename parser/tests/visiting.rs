@@ -1,6 +1,7 @@
 use decaf_parser::{
-    statements::UnconditionalElseStatement, ASTNode, Expression, Module, SourceId, Span, Statement,
-    ToStringOptions, VisitSettings, VisitorMut, VisitorsMut,
+    statements::UnconditionalElseStatement,
+    visiting::{BlockItemMut, Chain, VisitOptions, VisitorMut, VisitorsMut},
+    ASTNode, Expression, Module, Statement, StatementOrDeclaration, ToStringOptions,
 };
 use pretty_assertions::assert_eq;
 
@@ -15,27 +16,24 @@ fn visiting() {
         }
         "#;
 
-    let mut module = Module::from_string(
-        input.to_owned(),
-        Default::default(),
-        SourceId::NULL,
-        None,
-        Vec::new(),
-    )
-    .unwrap();
+    let mut module = Module::from_string(input.to_owned(), Default::default()).unwrap();
 
     let mut visitors = VisitorsMut {
         expression_visitors_mut: vec![Box::new(MakeStringsUppercase)],
         statement_visitors_mut: vec![Box::new(AddElseClause)],
-        jsx_element_visitors_mut: Default::default(),
         variable_visitors_mut: Default::default(),
         block_visitors_mut: Default::default(),
     };
-    module.visit_mut(&mut visitors, &mut (), &VisitSettings::default());
+    module.visit_mut(
+        &mut visitors,
+        &mut (),
+        &VisitOptions::default(),
+        source_map::Nullable::NULL,
+    );
 
     let output = module.to_string(&ToStringOptions::minified());
 
-    let expected = r#"const x="HELLO WORLD";function y(){if(condition){do_thing("HELLO WORLD"+" TEST")}else console.log("ELSE!")}"#;
+    let expected = r#"const x="HELLO WORLD";function y(){if(condition){do_thing("HELLO WORLD"+" TEST")}else console.log("ELSE!");}"#;
     assert_eq!(output, expected);
 }
 
@@ -43,7 +41,7 @@ fn visiting() {
 struct MakeStringsUppercase;
 
 impl VisitorMut<Expression, ()> for MakeStringsUppercase {
-    fn visit_mut(&mut self, item: &mut Expression, _data: &mut (), _chain: &decaf_parser::Chain) {
+    fn visit_mut(&mut self, item: &mut Expression, _data: &mut (), _chain: &Chain) {
         if let Expression::StringLiteral(content, _quoted, _) = item {
             *content = content.to_uppercase();
         }
@@ -53,23 +51,23 @@ impl VisitorMut<Expression, ()> for MakeStringsUppercase {
 /// Add else cases to if statements without one. In the else statements, it logs "else!"
 struct AddElseClause;
 
-impl VisitorMut<Statement, ()> for AddElseClause {
-    fn visit_mut(&mut self, item: &mut Statement, _data: &mut (), _chain: &decaf_parser::Chain) {
-        if let Statement::IfStatement(if_statement) = item {
+impl VisitorMut<BlockItemMut<'_>, ()> for AddElseClause {
+    fn visit_mut(&mut self, item: &mut BlockItemMut, _data: &mut (), _chain: &Chain) {
+        if let BlockItemMut::SingleStatement(Statement::If(if_statement))
+        | BlockItemMut::StatementOrDeclaration(StatementOrDeclaration::Statement(
+            Statement::If(if_statement),
+        )) = item
+        {
             if if_statement.trailing_else.is_none() {
-                let inner = Statement::from_string(
-                    "console.log(\"else!\")".to_owned(),
-                    Default::default(),
-                    SourceId::NULL,
-                    None,
-                    Vec::new(),
-                )
-                .unwrap()
-                .into();
+                let inner =
+                    Statement::from_string("console.log(\"else!\")".to_owned(), Default::default())
+                        .unwrap()
+                        .into();
+
                 if_statement.trailing_else = Some(UnconditionalElseStatement {
                     inner,
-                    position: Span::NULL_SPAN,
-                })
+                    position: source_map::Nullable::NULL,
+                });
             }
         }
     }

@@ -2,15 +2,23 @@
 use std::{
     collections::HashSet,
     panic,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    process,
     sync::{Arc, Mutex},
 };
 
-use checker::diagnostics;
+use checker::{
+    diagnostics,
+    source_map::{Nullable, SourceId},
+    synthesis::DecafParser,
+    TypeCheckOptions,
+};
+
+// This is here as it is used in the included `/specification.rs`
 use parser::ASTNode;
 
 mod specification {
-    use super::check_errors;
+    use super::{check_expected_diagnostics, TypeCheckOptions};
 
     // from build.rs
     include!(concat!(env!("OUT_DIR"), "/specification.rs"));
@@ -23,25 +31,21 @@ mod specification {
 // 	result
 // }
 
+// TODO under cfg
+// const SIMPLE_DTS: Option<&str> = Some(include_str!("../definitions/simple.d.ts"));
+const SIMPLE_DTS: Option<&str> = None;
+
+const IN_CI: bool = option_env!("CI").is_some();
+
 /// Called by each test
-fn check_errors(
+fn check_expected_diagnostics(
     heading: &'static str,
     line: usize,
-    code: &'static str,
+    // (Path, Content)
+    code: &[(&'static str, &'static str)],
     expected_diagnostics: &[&'static str],
+    type_check_options: Option<TypeCheckOptions>,
 ) {
-    let mut fs = parser::source_map::MapFileStore::default();
-    let source =
-        parser::source_map::FileSystem::new_source_id(&mut fs, PathBuf::default(), code.to_owned());
-    let module = parser::Module::from_string(
-        code.to_owned(),
-        parser::ParseOptions::default(),
-        source,
-        None,
-        Vec::new(),
-    )
-    .unwrap();
-
     // let global_buffer = Arc::new(Mutex::new(String::new()));
     // let old_panic_hook = panic::take_hook();
 
@@ -57,22 +61,55 @@ fn check_errors(
     // 	})
     // });
 
+    let type_check_options = type_check_options.unwrap_or_default();
+
     // let result = panic::catch_unwind(|| {
-    let result = checker::synthesis::module::synthesize_module_root(
-        &module,
-        std::iter::once(checker::INTERNAL_DEFINITION_FILE_PATH.into()).collect(),
-        |_| Some(checker::INTERNAL_DEFINITION_FILE.to_owned()),
+
+    if IN_CI {
+        eprintln!("::group::Running {heading}");
+    }
+
+    let definition_file_name: PathBuf = if SIMPLE_DTS.is_some() {
+        "./checker/definitions/simple.d.ts".into()
+    } else {
+        checker::INTERNAL_DEFINITION_FILE_PATH.into()
+    };
+    let type_definition_files = vec![definition_file_name.clone()];
+
+    let resolver = |path: &Path| -> Option<Vec<u8>> {
+        if path == definition_file_name.as_path() {
+            Some(SIMPLE_DTS.unwrap().to_owned().into_bytes())
+        } else if code.len() == 1 {
+            Some(code[0].1.to_owned().into())
+        } else {
+            code.iter()
+                .find_map(|(code_path, content)| {
+                    (std::path::Path::new(code_path) == path)
+                        .then_some(content.to_owned().to_owned())
+                })
+                .map(Into::into)
+        }
+    };
+
+    let result = checker::check_project::<_, DecafParser>(
+        vec![PathBuf::from("main.tsx")],
+        type_definition_files,
+        &resolver,
+        type_check_options,
+        (),
+        None,
     );
     // });
 
     // panic::set_hook(old_panic_hook);
 
-    let (diagnostics, ..) = result;
-    let diagnostics: Vec<String> = diagnostics
+    let diagnostics: Vec<String> = result
+        .diagnostics
         .into_iter()
         .map(|diag| {
             let (reason, pos) = diag.reason_and_position();
             if let Some(pos) = pos {
+                assert_ne!(pos.source, SourceId::NULL);
                 // TODO position
                 reason
             } else {
@@ -81,15 +118,19 @@ fn check_errors(
         })
         .collect();
 
-    if &diagnostics != expected_diagnostics {
+    if IN_CI {
+        eprintln!("::endgroup::");
+    }
+
+    if diagnostics != expected_diagnostics {
         panic!(
-            "{}",
-            pretty_assertions::Comparison::new(&diagnostics, expected_diagnostics).to_string()
+            "In '{heading}' on line {line}, found\n{}",
+            pretty_assertions::Comparison::new(expected_diagnostics, &diagnostics).to_string()
         )
     }
 
     // match result {
-    // 	Ok(result) => { }
+    // 	Ok(result) => {}
     // 	Err(error) => Err(Arc::into_inner(global_buffer).unwrap().into_inner().unwrap()),
     // }
 }

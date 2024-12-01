@@ -1,50 +1,38 @@
-mod ast_explorer;
-mod commands;
-mod error_handling;
+#![cfg_attr(target_family = "wasm", allow(unused))]
 
-// mod repl;
+mod ast_explorer;
+mod build;
+mod check;
+mod repl;
+mod reporting;
 
 pub(crate) mod utilities;
 
 pub mod cli;
+pub mod transformers;
 
+pub use build::build;
+pub use check::check;
+pub(crate) use checker::ReadFromFS;
 pub use checker::{Diagnostic, DiagnosticKind};
-pub use commands::{build, check};
+
 pub use parser::{source_map, ASTNode, ToStringOptions};
 use parser::{Module, ParseError};
 
 pub fn prettifier(input: String) -> Result<String, ParseError> {
-    use parser::source_map::FileSystem;
-
-    let mut fs = source_map::MapFileStore::default();
-    let source_id = fs.new_source_id("".into(), input.clone());
-    let module = Module::from_string(input, Default::default(), source_id, None, Vec::new())?;
+    let module = Module::from_string(input, Default::default())?;
     Ok(module.to_string(&ToStringOptions::default()))
 }
 
-pub trait FSResolver {
-    fn get_content_at_path(&self, path: &std::path::Path) -> Option<String>;
-}
+pub trait WriteToFS: Fn(&std::path::Path, String) {}
 
-impl<T> FSResolver for T
-where
-    T: Fn(&std::path::Path) -> Option<String>,
-{
-    fn get_content_at_path(&self, path: &std::path::Path) -> Option<String> {
-        (self)(path)
-    }
-}
-
-/// prompt -> response
-pub trait CLIInputResolver: Fn(&str) -> Option<String> {}
-
-impl<T> CLIInputResolver for T where T: Fn(&str) -> Option<String> {}
+impl<T> WriteToFS for T where T: Fn(&std::path::Path, String) {}
 
 #[cfg(target_family = "wasm")]
 mod wasm_bindings;
 
 #[cfg(target_family = "wasm")]
-pub use wasm_bindings::build_wasm;
+pub use wasm_bindings::experimental_build_wasm;
 
 #[cfg(target_family = "wasm")]
 pub use wasm_bindings::run_cli_wasm;
