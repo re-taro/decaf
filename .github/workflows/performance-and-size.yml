@@ -23,7 +23,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.80.0
       - name: Setup | Cache
         uses: Swatinem/rust-cache@v2.7.3
         with:
