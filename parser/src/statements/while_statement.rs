@@ -1,38 +1,37 @@
-use std::borrow::Cow;
-
 use source_map::Span;
 use visitable_derive::Visitable;
 
-use crate::{block::BlockOrSingleStatement, ASTNode, Expression, TSXKeyword, TSXToken};
+use crate::{
+    ast::MultipleExpression, block::BlockOrSingleStatement, derive_ASTNode, ASTNode, TSXKeyword,
+    TSXToken,
+};
 
-#[derive(Debug, PartialEq, Eq, Clone, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, PartialEq, Clone, Visitable, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
 pub struct WhileStatement {
-    pub condition: Expression,
+    pub condition: MultipleExpression,
     pub inner: BlockOrSingleStatement,
     pub position: Span,
 }
 
 impl ASTNode for WhileStatement {
-    fn get_position(&self) -> Cow<Span> {
-        Cow::Borrowed(&self.position)
+    fn get_position(&self) -> Span {
+        self.position
     }
 
     fn from_reader(
-        reader: &mut impl tokenizer_lib::TokenReader<TSXToken, Span>,
+        reader: &mut impl tokenizer_lib::TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
-        let start_span = reader.expect_next(TSXToken::Keyword(TSXKeyword::While))?;
+        let start = state.expect_keyword(reader, TSXKeyword::While)?;
         reader.expect_next(TSXToken::OpenParentheses)?;
-        let condition = Expression::from_reader(reader, state, settings)?;
+        let condition = MultipleExpression::from_reader(reader, state, options)?;
         reader.expect_next(TSXToken::CloseParentheses)?;
-        let inner = BlockOrSingleStatement::from_reader(reader, state, settings)?;
+        let inner = BlockOrSingleStatement::from_reader(reader, state, options)?;
         Ok(Self {
-            position: start_span.union(&inner.get_position()),
+            position: start.union(inner.get_position()),
             condition,
             inner,
         })
@@ -41,69 +40,69 @@ impl ASTNode for WhileStatement {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         buf.push_str("while");
-        settings.add_gap(buf);
+        options.push_gap_optionally(buf);
         buf.push('(');
-        self.condition.to_string_from_buffer(buf, settings, depth);
+        self.condition.to_string_from_buffer(buf, options, local);
         buf.push(')');
-        settings.add_gap(buf);
-        self.inner.to_string_from_buffer(buf, settings, depth + 1);
+        options.push_gap_optionally(buf);
+        self.inner
+            .to_string_from_buffer(buf, options, local.next_level());
     }
 }
 
-/// TODO what about a do statement
-#[derive(Debug, PartialEq, Eq, Clone, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, PartialEq, Clone, Visitable, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
 pub struct DoWhileStatement {
-    pub condition: Expression,
-    // TODO not sure about true here
+    pub condition: MultipleExpression,
+    // TODO unsure about true here
     pub inner: BlockOrSingleStatement,
     pub position: Span,
 }
 
 impl ASTNode for DoWhileStatement {
-    fn get_position(&self) -> Cow<Span> {
-        Cow::Borrowed(&self.position)
+    fn get_position(&self) -> Span {
+        self.position
     }
 
     fn from_reader(
-        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, Span>,
+        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
-        let start_span = reader.expect_next(TSXToken::Keyword(TSXKeyword::Do))?;
-        let inner = BlockOrSingleStatement::from_reader(reader, state, settings)?;
-        reader.expect_next(TSXToken::Keyword(TSXKeyword::While))?;
+        let start = state.expect_keyword(reader, TSXKeyword::Do)?;
+        let inner = BlockOrSingleStatement::from_reader(reader, state, options)?;
+        let _ = state.expect_keyword(reader, TSXKeyword::While)?;
         reader.expect_next(TSXToken::OpenParentheses)?;
-        let condition = Expression::from_reader(reader, state, settings)?;
-        reader.expect_next(TSXToken::CloseParentheses)?;
+        let condition = MultipleExpression::from_reader(reader, state, options)?;
+        let position = start.union(
+            reader
+                .expect_next(TSXToken::CloseParentheses)?
+                .get_end_after(1),
+        );
         Ok(Self {
-            position: start_span.union(&inner.get_position()),
             condition,
             inner,
+            position,
         })
     }
 
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
-        buf.push_str("do");
-        settings.add_gap(buf);
-        self.inner.to_string_from_buffer(buf, settings, depth + 1);
-        settings.add_gap(buf);
-        buf.push_str("while");
-        settings.add_gap(buf);
+        buf.push_str("do ");
+        self.inner.to_string_from_buffer(buf, options, local);
+        buf.push_str(" while");
+        options.push_gap_optionally(buf);
         buf.push('(');
-        self.condition.to_string_from_buffer(buf, settings, depth);
+        self.condition.to_string_from_buffer(buf, options, local);
         buf.push(')');
     }
 }

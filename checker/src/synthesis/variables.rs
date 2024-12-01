@@ -1,379 +1,569 @@
 use std::borrow::Cow;
 
-use ordered_float::NotNan;
 use parser::{
-    declarations::VariableDeclarationItem, ASTNode, ArrayDestructuringField,
-    ObjectDestructuringField, VariableField, VariableIdentifier,
+    declarations::VariableDeclarationItem, ASTNode, ArrayDestructuringField, Expression,
+    ObjectDestructuringField, SpreadDestructuringField, VariableField, VariableIdentifier,
 };
 
-use super::{expressions::synthesize_expression, type_annotations::synthesize_type_annotation};
+use super::expressions::synthesise_expression;
 use crate::{
-    diagnostics::{TypeCheckError, TypeStringRepresentation},
-    synthesis::property_key_as_type,
-    types::Constant,
+    context::{Context, ContextType, VariableRegisterArguments},
+    diagnostics::{PropertyKeyRepresentation, TypeCheckError, TypeStringRepresentation},
+    features::{
+        self,
+        variables::{get_new_register_argument_under, VariableMutability, VariableOrImport},
+    },
+    synthesis::parser_property_key_to_checker_property_key,
+    types::{
+        helpers::get_larger_type,
+        printing,
+        properties::{
+            get_properties_on_single_type, get_property_key_names_on_a_single_type, PropertyKey,
+            Publicity,
+        },
+    },
     CheckingData, Environment, TypeId,
 };
 
-/// For eagerly registering variables, before the statement and its RHS is actually evaluate
-///
-/// TODO shouldn't return type, for performs...
-pub(crate) fn register_variable<T: crate::FSResolver, U: parser::VariableFieldKind>(
-    name: &parser::VariableField<U>,
-    environment: &mut Environment,
-    checking_data: &mut CheckingData<'_, T>,
-    behavior: crate::context::VariableRegisterBehavior,
-    constraint: Option<TypeId>,
-) -> TypeId {
-    fn register_variable_identifier<T: crate::FSResolver>(
-        name: &VariableIdentifier,
-        environment: &mut Environment,
-        checking_data: &mut CheckingData<T>,
-        behavior: crate::context::VariableRegisterBehavior,
-        constraint: Option<TypeId>,
-    ) -> TypeId {
-        match name {
-            parser::VariableIdentifier::Standard(name, pos) => {
-                let ty = environment.register_variable_handle_error(
-                    &name,
-                    pos.clone(),
-                    behavior,
-                    checking_data,
-                );
-                if let Some(constraint) = constraint {
-                    checking_data
-                        .type_mappings
-                        .variables_to_constraints
-                        .0
-                        .insert(crate::VariableId(pos.source, pos.start), constraint);
-                }
-                ty
-            }
-            parser::VariableIdentifier::Cursor(_) => todo!(),
+pub(crate) fn register_variable_identifier<T: crate::ReadFromFS, V: ContextType>(
+    name: &VariableIdentifier,
+    environment: &mut Context<V>,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
+    argument: VariableRegisterArguments,
+) {
+    match name {
+        parser::VariableIdentifier::Standard(name, pos) => {
+            environment.register_variable_handle_error(
+                name,
+                argument,
+                pos.with_source(environment.get_source()),
+                &mut checking_data.diagnostics_container,
+                &mut checking_data.local_type_mappings,
+                checking_data.options.record_all_assignments_and_reads,
+            );
+        }
+        parser::VariableIdentifier::Marker(..) => {
+            crate::utilities::notify!("Skipping registering variable identifier that is Marker");
         }
     }
+}
 
+/// For eagerly registering variables, before the statement and its RHS is actually evaluate
+///
+/// TODO type annotations extras
+pub(crate) fn register_variable<T: crate::ReadFromFS>(
+    name: &parser::VariableField,
+    environment: &mut Environment,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
+    argument: VariableRegisterArguments,
+) {
     match name {
         parser::VariableField::Name(variable) => {
-            register_variable_identifier(variable, environment, checking_data, behavior, constraint)
+            register_variable_identifier(variable, environment, checking_data, argument);
         }
-        parser::VariableField::Array(items, _) => {
-            for (idx, field) in items.iter().enumerate() {
-                match field {
-                    ArrayDestructuringField::Spread(pos, variable) => {
-                        let ty = register_variable_identifier(
-                            variable,
+        parser::VariableField::Array {
+            members,
+            spread,
+            position,
+        } => {
+            if let Some(_spread) = spread {
+                checking_data.raise_unimplemented_error(
+                    "spread variable field",
+                    position.with_source(environment.get_source()),
+                );
+            }
+            for (idx, field) in members.iter().enumerate() {
+                match field.get_ast_ref() {
+                    // ArrayDestructuringField::Spread(variable, _pos) => {
+                    // 	// TODO
+                    // 	let argument = VariableRegisterArguments {
+                    // 		constant: argument.constant,
+                    // 		space: argument.space,
+                    // 		initial_value: argument.initial_value,
+                    // 	};
+                    // 	register_variable(
+                    // 		variable,
+                    // 		environment,
+                    // 		checking_data,
+                    // 		// TODO
+                    // 		argument,
+                    // 	);
+                    // }
+                    ArrayDestructuringField::Name(name, _type, _initial_value) => {
+                        // TODO account for spread in `idx`
+                        let key = PropertyKey::from_usize(idx);
+                        let argument = get_new_register_argument_under(
+                            &argument,
+                            &key,
                             environment,
                             checking_data,
-                            behavior.clone(),
-                            // TODO is this valid
-                            constraint,
+                            name.get_position(),
                         );
-                        // constraint.map(|constraint| environment.get_property_unbound(constraint, under, types) )
-                        // TODO
-                        // checking_data
-                        // 	.type_mappings
-                        // 	.variables_to_constraints
-                        // 	.0
-                        // 	.insert(crate::VariableId(pos.source, pos.start), constraint);
-                        // }
+                        register_variable(name, environment, checking_data, argument);
                     }
-                    ArrayDestructuringField::Name(name, _) => {
-                        let property_constraint = constraint.map(|constraint| {
-                            let under = checking_data
-                                .types
-                                .new_constant_type(Constant::Number(NotNan::from(idx as u32)));
-                            let property_constraint = environment.get_property_unbound(
-                                constraint,
-                                under,
-                                &checking_data.types,
-                            );
-                            match property_constraint {
-                                Some(value) => value.prop_to_type(),
-                                None => {
-                                    checking_data.diagnostics_container.add_error(
-                                        TypeCheckError::PropertyDoesNotExist {
-                                            property: TypeStringRepresentation::from_type_id(
-                                                constraint,
-                                                &environment.into_general_context(),
-                                                &checking_data.types,
-                                                false,
-                                            ),
-                                            on: TypeStringRepresentation::from_type_id(
-                                                constraint,
-                                                &environment.into_general_context(),
-                                                &checking_data.types,
-                                                false,
-                                            ),
-                                            site: name.get_position().into_owned(),
-                                        },
-                                    );
-                                    TypeId::ERROR_TYPE
-                                }
-                            }
-                        });
-                        register_variable(
-                            name.get_ast_ref(),
-                            environment,
-                            checking_data,
-                            behavior.clone(),
-                            property_constraint,
-                        );
-                    }
-                    ArrayDestructuringField::None => {}
+                    ArrayDestructuringField::Comment { .. } | ArrayDestructuringField::None => {}
                 }
             }
-            TypeId::ERROR_TYPE
         }
-        parser::VariableField::Object(items, _) => {
-            for field in items.iter() {
+        parser::VariableField::Object {
+            members, spread, ..
+        } => {
+            let mut taken_members = spread.is_some().then(Vec::<Cow<str>>::new);
+
+            for field in members {
                 match field.get_ast_ref() {
-                    ObjectDestructuringField::Spread(_, variable) => {
-                        let ty = register_variable_identifier(
+                    ObjectDestructuringField::Name(variable, _type, ..) => {
+                        let name = match variable {
+                            VariableIdentifier::Standard(ref name, _) => name,
+                            VariableIdentifier::Marker(_, _) => "?",
+                        };
+                        if let Some(ref mut taken_members) = taken_members {
+                            taken_members.push(Cow::Borrowed(name));
+                        }
+                        let key = PropertyKey::String(Cow::Borrowed(name));
+                        let argument = get_new_register_argument_under(
+                            &argument,
+                            &key,
+                            environment,
+                            checking_data,
+                            variable.get_position(),
+                        );
+                        register_variable_identifier(
                             variable,
                             environment,
                             checking_data,
-                            behavior.clone(),
-                            // TODO
-                            constraint,
+                            argument,
                         );
-                        if let Some(constraint) = constraint {
-                            // TODO
-                            // checking_data
-                            // 	.type_mappings
-                            // 	.variables_to_constraints
-                            // 	.0
-                            // 	.insert(crate::VariableId(pos.source, pos.start), constraint);
-                        }
-                    }
-                    ObjectDestructuringField::Name(variable, _) => {
-                        let ty = register_variable_identifier(
-                            variable,
-                            environment,
-                            checking_data,
-                            behavior.clone(),
-                            constraint,
-                        );
-                        if let Some(constraint) = constraint {
-                            // TODO
-                            // checking_data
-                            // 	.type_mappings
-                            // 	.variables_to_constraints
-                            // 	.0
-                            // 	.insert(crate::VariableId(pos.source, pos.start), constraint);
-                        }
                     }
                     ObjectDestructuringField::Map {
                         from,
+                        // TODO
+                        annotation: _,
                         name,
-                        default_value,
+                        default_value: _default_value,
                         position,
                     } => {
-                        let property_constraint = constraint.map(|constraint| {
-                            let under =
-                                property_key_as_type(from, environment, &mut checking_data.types);
-                            let property_constraint = environment.get_property_unbound(
-                                constraint,
-                                under,
-                                &checking_data.types,
-                            );
-                            match property_constraint {
-                                Some(value) => value.prop_to_type(),
-                                None => {
-                                    checking_data.diagnostics_container.add_error(
-                                        TypeCheckError::PropertyDoesNotExist {
-                                            property: TypeStringRepresentation::from_type_id(
-                                                constraint,
-                                                &environment.into_general_context(),
-                                                &checking_data.types,
-                                                false,
-                                            ),
-                                            on: TypeStringRepresentation::from_type_id(
-                                                constraint,
-                                                &environment.into_general_context(),
-                                                &checking_data.types,
-                                                false,
-                                            ),
-                                            site: name.get_position().into_owned(),
-                                        },
-                                    );
-                                    TypeId::ERROR_TYPE
-                                }
-                            }
-                        });
-                        register_variable(
-                            name.get_ast_ref(),
+                        let key = parser_property_key_to_checker_property_key(
+                            from,
                             environment,
                             checking_data,
-                            behavior.clone(),
-                            constraint,
+                            false,
                         );
+                        if let Some(ref mut taken_members) = taken_members {
+                            match key {
+                                PropertyKey::String(ref s) => taken_members.push(s.clone()),
+                                PropertyKey::Type(_) => {
+                                    crate::utilities::notify!("Cannot remove type");
+                                }
+                            }
+                        }
+                        let argument = get_new_register_argument_under(
+                            &argument,
+                            &key,
+                            environment,
+                            checking_data,
+                            *position,
+                        );
+                        register_variable(name.get_ast_ref(), environment, checking_data, argument);
                     }
                 }
             }
-            TypeId::ERROR_TYPE
+            if let (Some(taken_members), Some(SpreadDestructuringField(variable, _position))) =
+                (taken_members, spread)
+            {
+                // TODO
+                let initial_value = argument.initial_value;
+
+                let space = if let Some(space) = argument.space {
+                    let mut rest = Vec::new();
+                    for (publicity, key, property) in get_properties_on_single_type(
+                        space,
+                        &checking_data.types,
+                        environment,
+                        true,
+                        TypeId::ANY_TYPE,
+                    ) {
+                        if let PropertyKey::String(ref s) = key {
+                            if taken_members.contains(s) {
+                                continue;
+                            }
+                        }
+                        rest.push((publicity, key, property));
+                    }
+                    if rest.is_empty() {
+                        None
+                    } else {
+                        let rest = checking_data.types.new_anonymous_interface_type(rest);
+                        Some(rest)
+                    }
+                } else {
+                    None
+                };
+
+                let argument = VariableRegisterArguments {
+                    constant: argument.constant,
+                    space,
+                    initial_value,
+                    allow_reregistration: argument.allow_reregistration,
+                };
+
+                register_variable(
+                    variable,
+                    environment,
+                    checking_data,
+                    // TODO
+                    argument,
+                );
+            }
         }
     }
 }
 
 /// Name already been hoisted,
 ///
-/// TODO U::as_option_expr()
+/// TODO `U::as_option_expr()`
 ///
 /// TODO no idea how arrays and objects are checked here
-pub(super) fn synthesize_variable_declaration_item<
-    T: crate::FSResolver,
+pub(super) fn synthesise_variable_declaration_item<
+    T: crate::ReadFromFS,
     U: parser::ast::variable::DeclarationExpression + 'static,
 >(
     variable_declaration: &VariableDeclarationItem<U>,
     environment: &mut Environment,
-    is_constant: bool,
-    checking_data: &mut CheckingData<T>,
-) where
-    for<'a> Option<&'a parser::Expression>: From<&'a U>,
-{
-    let var_ty_and_pos = variable_declaration
-        .type_annotation
-        .as_ref()
-        .map(|reference| {
-            (
-                synthesize_type_annotation(reference, environment, checking_data),
-                reference.get_position().into_owned(),
-            )
-        });
+    checking_data: &mut CheckingData<T, super::DecafParser>,
+    exported: Option<VariableMutability>,
+    infer_constraint: bool,
+) {
+    // This is only added if there is an annotation, so can be None
+    let get_position = variable_declaration.get_position();
+    let var_ty_and_pos = checking_data
+        .local_type_mappings
+        .variable_restrictions
+        .get(&(environment.get_source(), get_position.start))
+        .map(|(ty, pos)| (*ty, *pos));
 
-    let value_ty = if let Some(value) =
-        Option::<&parser::Expression>::from(&variable_declaration.expression)
-    {
-        let value_ty = super::expressions::synthesize_expression(value, environment, checking_data);
+    // let name =
+    // 	types.new_constant_type(crate::Constant::String(name_object.to_owned()));
 
-        if let Some((var_ty, ta_pos)) = var_ty_and_pos {
-            crate::check_variable_initialization(
-                (var_ty, Cow::Owned(ta_pos)),
-                (value_ty, value.get_position()),
+    let value_ty =
+        if let Some(expression) = U::as_option_expression_ref(&variable_declaration.expression) {
+            let expected: TypeId = var_ty_and_pos
+                .as_ref()
+                .map_or(TypeId::ANY_TYPE, |(var_ty, _)| *var_ty);
+
+            // Crazy JavaScript behavior!!!
+            let expected: TypeId = if let (
+                VariableField::Name(name),
+                Expression::ExpressionFunction(_) | Expression::ClassExpression(_),
+            ) = (variable_declaration.name.get_ast_ref(), expression)
+            {
+                let name = checking_data
+                    .types
+                    .new_constant_type(crate::Constant::String(
+                        name.as_option_str().unwrap_or_default().to_owned(),
+                    ));
+                features::functions::new_name_expected_object(
+                    name,
+                    expected,
+                    &mut checking_data.types,
+                    environment,
+                )
+            } else {
+                expected
+            };
+
+            let value_ty = super::expressions::synthesise_expression(
+                expression,
                 environment,
                 checking_data,
+                expected,
             );
-        }
 
-        value_ty
-    } else {
-        TypeId::UNDEFINED_TYPE
-    };
+            if let Some((var_ty, ta_pos)) = var_ty_and_pos {
+                let is_valid = crate::features::variables::check_variable_initialization(
+                    (var_ty, ta_pos),
+                    (
+                        value_ty,
+                        expression
+                            .get_position()
+                            .with_source(environment.get_source()),
+                    ),
+                    environment,
+                    checking_data,
+                );
+
+                if !is_valid || value_ty == TypeId::ERROR_TYPE {
+                    // If error, then create a new type like the annotation
+                    checking_data.types.new_error_type(var_ty)
+                } else {
+                    value_ty
+                }
+            } else if infer_constraint {
+                let constraint = get_larger_type(value_ty, &checking_data.types);
+
+                if let VariableField::Name(n) = variable_declaration.name.get_ast_ref() {
+                    if let VariableOrImport::Variable {
+                        mutability:
+                            VariableMutability::Mutable {
+                                reassignment_constraint,
+                            },
+                        ..
+                    } = environment
+                        .variables
+                        .get_mut(n.as_option_str().unwrap_or_default())
+                        .unwrap()
+                    {
+                        let _ = reassignment_constraint.insert(constraint);
+                    }
+                } else {
+                    crate::utilities::notify!(
+                        "Infer constraint on {:?}",
+                        variable_declaration.name.get_ast_ref()
+                    );
+                }
+
+                value_ty
+            } else {
+                value_ty
+            }
+        } else {
+            TypeId::UNDEFINED_TYPE
+        };
 
     let item = variable_declaration.name.get_ast_ref();
-    assign_to_fields(item, environment, checking_data, value_ty);
+    assign_initial_to_fields(item, environment, checking_data, value_ty, exported);
 }
 
-fn assign_to_fields<T: crate::FSResolver>(
-    item: &VariableField<parser::VariableFieldInSourceCode>,
+fn assign_initial_to_fields<T: crate::ReadFromFS>(
+    item: &VariableField,
     environment: &mut Environment,
-    checking_data: &mut CheckingData<T>,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
     value: TypeId,
+    exported: Option<VariableMutability>,
 ) {
     match item {
         VariableField::Name(name) => {
-            let get_position = name.get_position();
-            let id = crate::VariableId(get_position.source, get_position.start);
-            environment.register_initial_variable_declaration_value(id, value)
-        }
-        VariableField::Array(items, _) => {
-            for (idx, item) in items.iter().enumerate() {
-                match item {
-                    ArrayDestructuringField::Spread(_, _) => todo!(),
-                    ArrayDestructuringField::Name(variable_field, _) => {
-                        let idx = checking_data
-                            .types
-                            .new_constant_type(Constant::Number((idx as f64).try_into().unwrap()));
-                        let value =
-                            environment.get_property(value, idx, &mut checking_data.types, None);
+            let position = name.get_position();
+            let id = if let Some(aliases) = checking_data
+                .local_type_mappings
+                .var_aliases
+                .get(&position.start)
+            {
+                *aliases
+            } else {
+                crate::VariableId(environment.get_source(), position.start)
+            };
 
-                        if let Some((_, value)) = value {
-                            assign_to_fields(
-                                variable_field.get_ast_ref(),
-                                environment,
-                                checking_data,
-                                value,
-                            )
-                        }
+            environment.register_initial_variable_declaration_value(id, value);
 
-                        // TODO
-                    }
-                    ArrayDestructuringField::None => {}
+            if let Some(mutability) = exported {
+                if let crate::Scope::Module {
+                    ref mut exported, ..
+                } = environment.context_type.scope
+                {
+                    let name = match name {
+                        VariableIdentifier::Standard(ref name, _) => name.to_owned(),
+                        VariableIdentifier::Marker(_, _) => "?".to_owned(),
+                    };
+                    exported.named.insert(name, (id, mutability));
+                } else {
+                    checking_data.diagnostics_container.add_error(
+                        TypeCheckError::NonTopLevelExport(
+                            name.get_position().with_source(environment.get_source()),
+                        ),
+                    );
                 }
             }
         }
-        VariableField::Object(items, _) => {
-            for item in items {
-                match item.get_ast_ref() {
-                    ObjectDestructuringField::Spread(_, _) => todo!(),
-                    ObjectDestructuringField::Name(name, default_value) => {
-                        let get_position = name.get_position();
+        VariableField::Array {
+            members: _,
+            spread: _,
+            position,
+        } => {
+            checking_data.raise_unimplemented_error(
+                "array spread",
+                position.with_source(environment.get_source()),
+            );
+            // let position = position.with_source(environment.get_source());
 
-                        let id = crate::VariableId(get_position.source, get_position.start);
+            // if let Some(spread) = spread {
+            // }
+        }
+        VariableField::Object {
+            members,
+            spread,
+            position,
+        } => {
+            for member in members {
+                match member.get_ast_ref() {
+                    ObjectDestructuringField::Name(name, _, default_value, _) => {
+                        let position = name.get_position().with_source(environment.get_source());
+                        let id = crate::VariableId(environment.get_source(), position.start);
 
                         let key_ty = match name {
-                            VariableIdentifier::Standard(name, _) => checking_data
-                                .types
-                                .new_constant_type(Constant::String(name.clone())),
-                            VariableIdentifier::Cursor(_) => todo!(),
+                            VariableIdentifier::Standard(name, _) => {
+                                PropertyKey::String(Cow::Borrowed(name))
+                            }
+                            VariableIdentifier::Marker(..) => PropertyKey::new_empty_property_key(),
                         };
 
                         // TODO if LHS = undefined ...? conditional
                         // TODO record information
-                        let property =
-                            environment.get_property(value, key_ty, &mut checking_data.types, None);
+                        let property = environment.get_property_handle_errors(
+                            value,
+                            Publicity::Public,
+                            &key_ty,
+                            checking_data,
+                            position,
+                            crate::types::properties::AccessMode::DoNotBindThis,
+                        );
                         let value = match property {
-                            Some((_, value)) => value,
-                            None => {
-                                // TODO non decidable error
+                            Ok(instance) => instance.get_value(),
+                            Err(()) => {
                                 if let Some(else_expression) = default_value {
-                                    synthesize_expression(
+                                    synthesise_expression(
                                         else_expression,
                                         environment,
                                         checking_data,
+                                        TypeId::ANY_TYPE,
                                     )
                                 } else {
-                                    // TODO emit error
-                                    TypeId::ERROR_TYPE
+                                    checking_data.diagnostics_container.add_error(
+                                        TypeCheckError::PropertyDoesNotExist {
+                                            property: match key_ty {
+                                                PropertyKey::String(s) => {
+                                                    PropertyKeyRepresentation::StringKey(
+                                                        s.to_string(),
+                                                    )
+                                                }
+                                                PropertyKey::Type(t) => {
+                                                    PropertyKeyRepresentation::Type(
+                                                        printing::print_type(
+                                                            t,
+                                                            &checking_data.types,
+                                                            environment,
+                                                            false,
+                                                        ),
+                                                    )
+                                                }
+                                            },
+                                            on: TypeStringRepresentation::from_type_id(
+                                                value,
+                                                environment,
+                                                &checking_data.types,
+                                                false,
+                                            ),
+                                            position,
+                                            possibles: get_property_key_names_on_a_single_type(
+                                                value,
+                                                &checking_data.types,
+                                                environment,
+                                            )
+                                            .iter()
+                                            .map(AsRef::as_ref)
+                                            .collect::<Vec<&str>>(),
+                                        },
+                                    );
+                                    TypeId::ANY_TYPE
                                 }
                             }
                         };
 
-                        environment.register_initial_variable_declaration_value(id, value)
+                        environment.register_initial_variable_declaration_value(id, value);
                     }
                     ObjectDestructuringField::Map {
                         from,
                         name,
+                        annotation: _,
                         default_value,
                         position,
                     } => {
-                        let key_ty = super::property_key_as_type(
+                        let key_ty = super::parser_property_key_to_checker_property_key(
                             from,
                             environment,
-                            &mut checking_data.types,
+                            checking_data,
+                            true,
                         );
 
                         // TODO if LHS = undefined ...? conditional
-                        // TODO record information
-                        let property_value =
-                            environment.get_property(value, key_ty, &mut checking_data.types, None);
+                        let property_value = environment.get_property_handle_errors(
+                            value,
+                            Publicity::Public,
+                            &key_ty,
+                            checking_data,
+                            position.with_source(environment.get_source()),
+                            crate::types::properties::AccessMode::DoNotBindThis,
+                        );
 
                         let value = match property_value {
-                            Some((_, value)) => value,
-                            None => {
-                                // TODO non decidable error
+                            Ok(instance) => instance.get_value(),
+                            Err(()) => {
                                 if let Some(default_value) = default_value {
-                                    synthesize_expression(default_value, environment, checking_data)
+                                    synthesise_expression(
+                                        default_value,
+                                        environment,
+                                        checking_data,
+                                        TypeId::ANY_TYPE,
+                                    )
                                 } else {
-                                    // TODO emit error
+                                    checking_data.diagnostics_container.add_error(
+                                        TypeCheckError::PropertyDoesNotExist {
+                                            property: match key_ty {
+                                                PropertyKey::String(s) => {
+                                                    PropertyKeyRepresentation::StringKey(
+                                                        s.to_string(),
+                                                    )
+                                                }
+                                                PropertyKey::Type(t) => {
+                                                    PropertyKeyRepresentation::Type(
+                                                        printing::print_type(
+                                                            t,
+                                                            &checking_data.types,
+                                                            environment,
+                                                            false,
+                                                        ),
+                                                    )
+                                                }
+                                            },
+                                            on: TypeStringRepresentation::from_type_id(
+                                                value,
+                                                environment,
+                                                &checking_data.types,
+                                                false,
+                                            ),
+                                            position: position
+                                                .with_source(environment.get_source()),
+                                            possibles: get_property_key_names_on_a_single_type(
+                                                value,
+                                                &checking_data.types,
+                                                environment,
+                                            )
+                                            .iter()
+                                            .map(AsRef::as_ref)
+                                            .collect::<Vec<&str>>(),
+                                        },
+                                    );
+
                                     TypeId::ERROR_TYPE
                                 }
                             }
                         };
 
-                        assign_to_fields(name.get_ast_ref(), environment, checking_data, value)
+                        assign_initial_to_fields(
+                            name.get_ast_ref(),
+                            environment,
+                            checking_data,
+                            value,
+                            exported,
+                        );
                     }
                 }
+            }
+            if let Some(_spread) = spread {
+                checking_data.raise_unimplemented_error(
+                    "spread variable field",
+                    position.with_source(environment.get_source()),
+                );
             }
         }
     }

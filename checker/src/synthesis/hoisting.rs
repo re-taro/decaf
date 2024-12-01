@@ -1,288 +1,1035 @@
-use std::collections::HashMap;
+use std::iter;
 
 use parser::{
-    declarations::DeclareVariableDeclaration, ASTNode, Declaration, Statement,
-    StatementOrDeclaration, VariableIdentifier,
+    declarations::{export::Exportable, DeclareVariableDeclaration, ExportDeclaration},
+    ASTNode, Declaration, Decorated, ExpressionOrStatementPosition, Statement,
+    StatementOrDeclaration, StatementPosition, VariableIdentifier,
 };
 
 use crate::{
-    behavior::functions::RegisterOnExisting, context::Environment,
-    structures::variables::VariableMutability, CheckingData, TypeId,
+    context::{environment::DeclareInterfaceResult, Environment, VariableRegisterArguments},
+    diagnostics::TypeCheckError,
+    features::{
+        functions::{
+            synthesise_declare_statement_function, synthesise_hoisted_statement_function,
+            SynthesisableFunction,
+        },
+        modules::{import_items, ImportKind, NamePair},
+        variables::VariableMutability,
+    },
+    synthesis::type_annotations::get_annotation_from_declaration,
+    CheckingData, ReadFromFS, TypeId,
 };
 
 use super::{
-    functions::type_function_reference, type_annotations::synthesize_type_annotation,
-    variables::register_variable,
+    definitions::get_internal_function_effect_from_decorators, variables::register_variable,
+    DecafParser,
 };
 
-/// TODO imports and exports
-pub(crate) fn hoist_statements<T: crate::FSResolver>(
+pub(crate) fn hoist_statements<T: crate::ReadFromFS>(
     items: &[StatementOrDeclaration],
     environment: &mut Environment,
-    checking_data: &mut CheckingData<T>,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
 ) {
-    let mut idx_to_types = HashMap::new();
-
-    // First stage
-    for item in items.iter() {
+    // First stage: imports (both types and names) and types
+    for item in items {
         if let StatementOrDeclaration::Declaration(declaration) = item {
             match declaration {
-                parser::Declaration::DeclareVariable(_)
-                | parser::Declaration::DeclareFunction(_)
-                | parser::Declaration::Class(_)
-                | parser::Declaration::Variable(_)
-                | parser::Declaration::Function(_) => {}
-                parser::Declaration::Enum(r#enum) => {
-                    checking_data.raise_unimplemented_error("enum", r#enum.on.position.clone())
-                }
-                parser::Declaration::DeclareInterface(_interface) => todo!(),
-                parser::Declaration::Interface(interface) => {
-                    let ty = environment.new_interface(
-                        &interface.on.name,
-                        interface.on.position.clone(),
+                Declaration::Namespace(ns) => checking_data.raise_unimplemented_error(
+                    "namespace",
+                    ns.position.with_source(environment.get_source()),
+                ),
+                Declaration::Interface(Decorated { on: interface, .. })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::Interface(interface),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    let result = environment.declare_interface::<DecafParser>(
+                        interface.name.as_option_str().unwrap_or_default(),
+                        interface.type_parameters.as_deref(),
+                        interface.extends.as_deref(),
                         &mut checking_data.types,
                     );
-                    idx_to_types.insert(interface.on.position.start, ty);
-                }
-                parser::Declaration::TypeAlias(alias) => {
-                    if alias.type_name.type_parameters.is_some() {
-                        todo!()
-                    }
-                    let to = synthesize_type_annotation(
-                        &alias.type_expression,
-                        environment,
-                        checking_data,
-                    );
 
-                    environment.new_alias(&alias.type_name.name, to, &mut checking_data.types);
-                }
-                parser::Declaration::Import(import) => {
-                    checking_data.raise_unimplemented_error("imports", import.position.clone());
-                    // TODO get types from checking_data.modules.exported
-                    if let Some(ref imports) = import.imports {
-                        for part in imports {
-                            match part {
-                                parser::declarations::ImportPart::Name(identifier) => {
-                                    if let VariableIdentifier::Standard(name, pos) = identifier {
-                                        environment.register_variable_handle_error(
-                                            name,
-                                            pos.clone(),
-                                            crate::context::VariableRegisterBehavior::Declare {
-                                                base: TypeId::UNIMPLEMENTED_ERROR_TYPE,
-                                            },
-                                            checking_data,
-                                        );
-                                    }
-                                }
-                                parser::declarations::ImportPart::NameWithAlias {
-                                    name,
-                                    alias,
-                                    position,
-                                } => {
-                                    environment.register_variable_handle_error(
-                                        name,
-                                        position.clone(),
-                                        crate::context::VariableRegisterBehavior::Declare {
-                                            base: TypeId::UNIMPLEMENTED_ERROR_TYPE,
-                                        },
-                                        checking_data,
-                                    );
-                                }
+                    if let Ok(DeclareInterfaceResult::Merging {
+                        ty: _,
+                        in_same_context: true,
+                    }) = &result
+                    {
+                        checking_data.diagnostics_container.add_warning(
+                            crate::diagnostics::TypeCheckWarning::MergingInterfaceInSameContext {
+                                position: interface.position.with_source(environment.get_source()),
+                            },
+                        );
+                    }
+
+                    if let Ok(
+                        DeclareInterfaceResult::Merging {
+                            ty,
+                            in_same_context: _,
+                        }
+                        | DeclareInterfaceResult::New(ty),
+                    ) = result
+                    {
+                        checking_data
+                            .local_type_mappings
+                            .types_to_types
+                            .push(interface.get_position(), ty);
+
+                        if let Declaration::Export(_) = declaration {
+                            if let crate::Scope::Module {
+                                ref mut exported, ..
+                            } = environment.context_type.scope
+                            {
+                                exported.named_types.insert(
+                                    interface
+                                        .name
+                                        .as_option_str()
+                                        .unwrap_or_default()
+                                        .to_owned(),
+                                    ty,
+                                );
                             }
                         }
+                    } else {
+                        checking_data.diagnostics_container.add_error(
+                            crate::diagnostics::TypeCheckError::TypeAlreadyDeclared {
+                                name: interface
+                                    .name
+                                    .as_option_str()
+                                    .unwrap_or_default()
+                                    .to_owned(),
+                                position: interface
+                                    .get_position()
+                                    .with_source(environment.get_source()),
+                            },
+                        );
                     }
                 }
-                parser::Declaration::Export(export) => {
-                    checking_data
-                        .raise_unimplemented_error("export", export.get_position().into_owned());
+                Declaration::Class(Decorated { on: class, .. })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::Class(class),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    let result = environment.declare_class::<DecafParser>(
+                        class.name.as_option_str().unwrap_or_default(),
+                        class.type_parameters.as_deref(),
+                        // class.extends.as_deref(),
+                        &mut checking_data.types,
+                    );
+
+                    if let Ok(ty) = result {
+                        checking_data
+                            .local_type_mappings
+                            .types_to_types
+                            .push(class.name.identifier.get_position(), ty);
+
+                        if let Declaration::Export(_) = declaration {
+                            if let crate::Scope::Module {
+                                ref mut exported, ..
+                            } = environment.context_type.scope
+                            {
+                                exported.named_types.insert(
+                                    class.name.as_option_str().unwrap_or_default().to_owned(),
+                                    ty,
+                                );
+                            }
+                        }
+                    } else {
+                        checking_data.diagnostics_container.add_error(
+                            crate::diagnostics::TypeCheckError::TypeAlreadyDeclared {
+                                name: class.name.as_option_str().unwrap_or_default().to_owned(),
+                                position: class
+                                    .get_position()
+                                    .with_source(environment.get_source()),
+                            },
+                        );
+                    }
                 }
+                Declaration::TypeAlias(alias)
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::TypeAlias(alias),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    let result = environment.declare_alias::<DecafParser>(
+                        alias.name.as_option_str().unwrap_or_default(),
+                        alias.parameters.as_deref(),
+                        // &alias.references,
+                        alias.get_position(),
+                        &mut checking_data.types,
+                    );
+                    if let Ok(ty) = result {
+                        checking_data
+                            .local_type_mappings
+                            .types_to_types
+                            .push(alias.get_position(), ty);
+
+                        if let Declaration::Export(_) = declaration {
+                            if let crate::Scope::Module {
+                                ref mut exported, ..
+                            } = environment.context_type.scope
+                            {
+                                exported.named_types.insert(
+                                    alias.name.as_option_str().unwrap_or_default().to_owned(),
+                                    ty,
+                                );
+                            }
+                        }
+                    } else {
+                        checking_data.diagnostics_container.add_error(
+                            crate::diagnostics::TypeCheckError::TypeAlreadyDeclared {
+                                name: alias.name.as_option_str().unwrap_or_default().to_owned(),
+                                position: alias
+                                    .get_position()
+                                    .with_source(environment.get_source()),
+                            },
+                        );
+                    }
+                }
+                Declaration::Import(import) => {
+                    let items = match &import.items {
+                        parser::declarations::import::ImportedItems::Parts(parts) => {
+                            crate::utilities::notify!("{:?}", parts);
+                            crate::features::modules::ImportKind::Parts(
+                                parts.iter().flatten().filter_map(part_to_name_pair),
+                            )
+                        }
+                        parser::declarations::import::ImportedItems::All { under } => match under {
+                            VariableIdentifier::Standard(under, position) => {
+                                crate::features::modules::ImportKind::All {
+                                    under,
+                                    position: *position,
+                                }
+                            }
+                            VariableIdentifier::Marker(_, _) => {
+                                // TODO I think this is best
+                                continue;
+                            }
+                        },
+                    };
+                    let default_import = import.default.as_ref().and_then(|default_identifier| {
+                        match default_identifier {
+                            VariableIdentifier::Standard(name, position) => {
+                                Some((name.as_str(), *position))
+                            }
+                            VariableIdentifier::Marker(..) => None,
+                        }
+                    });
+                    import_items(
+                        environment,
+                        import.from.get_path().unwrap(),
+                        import.position,
+                        default_import,
+                        items,
+                        checking_data,
+                        false,
+                        import.is_type_annotation_import_only,
+                    );
+                }
+                Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::ImportAll { r#as, from },
+                            position,
+                        },
+                    ..
+                }) => {
+                    let kind = match r#as {
+                        Some(VariableIdentifier::Standard(name, position)) => ImportKind::All {
+                            under: name,
+                            position: *position,
+                        },
+                        Some(VariableIdentifier::Marker(_, _)) => {
+                            // TODO
+                            continue;
+                        }
+                        None => ImportKind::Everything,
+                    };
+
+                    import_items::<iter::Empty<_>, _, _>(
+                        environment,
+                        from.get_path().unwrap(),
+                        *position,
+                        None,
+                        kind,
+                        checking_data,
+                        true,
+                        // TODO
+                        false,
+                    );
+                }
+                Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported:
+                                Exportable::ImportParts {
+                                    parts,
+                                    from,
+                                    type_definitions_only,
+                                    ..
+                                },
+                            position,
+                        },
+                    ..
+                }) => {
+                    let parts = parts.iter().filter_map(part_to_name_pair);
+
+                    import_items(
+                        environment,
+                        from.get_path().unwrap(),
+                        *position,
+                        None,
+                        crate::features::modules::ImportKind::Parts(parts),
+                        checking_data,
+                        true,
+                        *type_definitions_only,
+                    );
+                }
+                Declaration::Enum(Decorated { on: r#enum, .. })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::EnumDeclaration(r#enum),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    if checking_data.options.extra_syntax {
+                        checking_data.diagnostics_container.add_warning(
+                            crate::diagnostics::TypeCheckWarning::ItemMustBeUsedWithFlag {
+                                item: "enum",
+                                position: r#enum.position.with_source(environment.get_source()),
+                            },
+                        );
+                    }
+
+                    // TODO WIP implementation
+                    let result = environment.declare_alias::<DecafParser>(
+                        &r#enum.name,
+                        None,
+                        r#enum.get_position(),
+                        &mut checking_data.types,
+                    );
+                    if let Ok(ty) = result {
+                        checking_data
+                            .local_type_mappings
+                            .types_to_types
+                            .push(r#enum.get_position(), ty);
+
+                        checking_data.types.update_alias(ty, TypeId::NUMBER_TYPE);
+                    } else {
+                        let position = r#enum.get_position().with_source(environment.get_source());
+                        checking_data.diagnostics_container.add_error(
+                            crate::diagnostics::TypeCheckError::TypeAlreadyDeclared {
+                                name: r#enum.name.clone(),
+                                position,
+                            },
+                        );
+                    }
+                }
+                Declaration::DeclareVariable(_)
+                | Declaration::Variable(_)
+                | Declaration::Function(_)
+                | Declaration::Export(..) => {}
             }
         }
     }
 
-    // Second stage
-    for (idx, item) in items.iter().enumerate() {
+    // Second stage: variables and function type hoisting
+    let mut second_items = items.iter().peekable();
+    while let Some(item) = second_items.next() {
         match item {
             StatementOrDeclaration::Statement(stmt) => {
-                if let Statement::VarVariable(_) = stmt {
-                    checking_data.raise_unimplemented_error(
-                        "var statement hoisting",
-                        stmt.get_position().into_owned(),
-                    );
+                if let Statement::VarVariable(stmt) = stmt {
+                    for declaration in &stmt.declarations {
+                        let constraint = get_annotation_from_declaration(
+                            declaration,
+                            environment,
+                            checking_data,
+                        );
+                        register_variable(
+                            declaration.name.get_ast_ref(),
+                            environment,
+                            checking_data,
+                            VariableRegisterArguments {
+                                constant: false,
+                                space: constraint,
+                                // Important!
+                                initial_value: Some(TypeId::UNDEFINED_TYPE),
+                                // `var` declarations can be redeclared!
+                                allow_reregistration: true,
+                            },
+                        );
+                    }
                 }
             }
             StatementOrDeclaration::Declaration(dec) => match dec {
-                parser::Declaration::Variable(declaration) => match declaration {
-                    parser::declarations::VariableDeclaration::ConstDeclaration {
-                        keyword,
-                        declarations,
-                    } => {
-                        for declaration in declarations.iter() {
-                            let constraint =
-                                declaration.type_annotation.as_ref().map(|reference| {
-                                    synthesize_type_annotation(
-                                        &reference,
-                                        environment,
-                                        checking_data,
-                                    )
-                                });
-
-                            let behavior = crate::context::VariableRegisterBehavior::Register {
-                                mutability: VariableMutability::Constant,
-                            };
-
-                            register_variable(
-                                declaration.name.get_ast_ref(),
-                                environment,
-                                checking_data,
-                                behavior,
-                                constraint,
-                            );
-                        }
-                    }
-                    parser::declarations::VariableDeclaration::LetDeclaration {
-                        keyword,
-                        declarations,
-                    } => {
-                        for declaration in declarations.iter() {
-                            let constraint =
-                                declaration.type_annotation.as_ref().map(|reference| {
-                                    synthesize_type_annotation(
-                                        &reference,
-                                        environment,
-                                        checking_data,
-                                    )
-                                });
-
-                            let behavior = crate::context::VariableRegisterBehavior::Register {
-                                mutability: VariableMutability::Mutable {
-                                    reassignment_constraint: constraint,
-                                },
-                            };
-
-                            register_variable(
-                                declaration.name.get_ast_ref(),
-                                environment,
-                                checking_data,
-                                behavior,
-                                constraint,
-                            );
-                        }
-                    }
-                },
-                parser::Declaration::Function(func) => {
-                    // TODO unsynthesized function? ...
-                    let behavior = crate::context::VariableRegisterBehavior::Register {
-                        // TODO
-                        mutability: crate::structures::variables::VariableMutability::Constant,
-                    };
-                    environment.register_variable_handle_error(
-                        func.on.name.as_str(),
-                        func.get_position().into_owned(),
-                        behavior,
-                        checking_data,
-                    );
-                }
-                parser::Declaration::DeclareFunction(func) => {
-                    // TODO abstract
-                    let base = type_function_reference(
-                        &func.type_parameters,
-                        &func.parameters,
-                        func.return_type.as_ref(),
-                        environment,
-                        checking_data,
-                        func.performs.as_ref().into(),
-                        func.position.clone(),
-                        crate::types::FunctionKind::Arrow,
-                        None,
-                    );
-
-                    let base = checking_data.types.new_function_type_annotation(
-                        base.type_parameters,
-                        base.parameters,
-                        base.return_type,
-                        func.position.clone(),
-                        base.effects,
-                        base.constant_id,
-                    );
-
-                    let behavior = crate::context::VariableRegisterBehavior::Declare { base };
-                    environment.register_variable_handle_error(
-                        func.name.as_str(),
-                        func.get_position().into_owned(),
-                        behavior,
-                        checking_data,
-                    );
-                }
-                parser::Declaration::Class(_) => {
-                    // TODO hoist type...
-                }
-                parser::Declaration::Enum(_) => todo!(),
-                parser::Declaration::Interface(interface) => {
-                    let ty = idx_to_types.remove(&interface.on.position.start).unwrap();
-                    super::interfaces::synthesize_signatures(
-                        &interface.on.members,
-                        super::interfaces::OnToType(ty),
-                        environment,
-                        checking_data,
-                    );
-                }
-                parser::Declaration::TypeAlias(_) => {}
-                parser::Declaration::DeclareVariable(DeclareVariableDeclaration {
-                    name,
-                    type_restriction,
-                    decorators,
-                    position,
+                Declaration::Namespace(ns) => checking_data.raise_unimplemented_error(
+                    "namespace",
+                    ns.position.with_source(environment.get_source()),
+                ),
+                Declaration::Variable(declaration)
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::Variable(declaration),
+                            position: _,
+                        },
+                    ..
                 }) => {
-                    // TODO tidy up
-                    let variable_ty =
-                        synthesize_type_annotation(&type_restriction, environment, checking_data);
+                    hoist_variable_declaration(declaration, environment, checking_data);
+                }
+                Declaration::Class(Decorated { on: class, .. })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::Class(class),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    let name_position = class
+                        .name
+                        .identifier
+                        .get_position()
+                        .with_source(environment.get_source());
 
-                    // // TODO not sure...
-                    // if let Some(frozen) = environment.is_frozen(variable_ty) {
-                    // 	environment.frozen.insert(var_type, frozen);
-                    // }
+                    let ty = *checking_data
+                        .local_type_mappings
+                        .types_to_types
+                        .get(name_position.start)
+                        .unwrap();
 
-                    let declare_variable = environment.declare_variable(
-                        &name,
-                        position.clone(),
-                        variable_ty,
-                        &mut checking_data.types,
+                    // Lift members
+                    let constructor = super::classes::register_statement_class_with_members(
+                        ty,
+                        class,
+                        environment,
+                        checking_data,
                     );
 
-                    checking_data
-                        .type_mappings
-                        .variables_to_constraints
-                        .0
-                        .insert(
-                            crate::VariableId(position.source, position.start),
-                            variable_ty,
+                    let name = StatementPosition::as_option_str(&class.name).unwrap_or_default();
+                    let argument = VariableRegisterArguments {
+                        // TODO functions are constant references
+                        constant: true,
+                        space: Some(constructor),
+                        initial_value: None,
+                        allow_reregistration: false,
+                    };
+
+                    environment.register_variable_handle_error(
+                        name,
+                        argument,
+                        name_position,
+                        &mut checking_data.diagnostics_container,
+                        &mut checking_data.local_type_mappings,
+                        checking_data.options.record_all_assignments_and_reads,
+                    );
+                }
+                Declaration::Export(Decorated {
+                    on: ExportDeclaration::DefaultFunction { position, .. },
+                    ..
+                }) => {
+                    // TODO under definition file
+                    checking_data.diagnostics_container.add_error(
+                        TypeCheckError::FunctionWithoutBodyNotAllowedHere {
+                            position: position.with_source(environment.get_source()),
+                        },
+                    );
+                    continue;
+                }
+                Declaration::TypeAlias(alias)
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::TypeAlias(alias),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    let ty = checking_data
+                        .local_type_mappings
+                        .types_to_types
+                        .get(alias.get_position().start)
+                        .unwrap();
+
+                    environment.register_alias(
+                        *ty,
+                        alias.parameters.as_deref(),
+                        &alias.references,
+                        alias.get_position(),
+                        checking_data,
+                    );
+                }
+                Declaration::Interface(Decorated { on: interface, .. })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::Interface(interface),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    use crate::types::{PolyNature, Type};
+                    use crate::ASTImplementation;
+                    use crate::Scope;
+
+                    let ty = *checking_data
+                        .local_type_mappings
+                        .types_to_types
+                        .get(interface.get_position().start)
+                        .unwrap();
+
+                    if let Type::Interface { parameters, .. } =
+                        checking_data.types.get_type_by_id(ty)
+                    {
+                        if let Some(parameters) = parameters {
+                            let mut sub_environment =
+                                environment.new_lexical_environment(Scope::TypeAlias);
+                            let parameters = parameters.clone();
+                            for parameter in parameters.iter().copied() {
+                                let Type::RootPolyType(PolyNature::StructureGeneric {
+                                    name, ..
+                                }) = checking_data.types.get_type_by_id(parameter)
+                                else {
+                                    unreachable!(
+                                        "{:?}",
+                                        checking_data.types.get_type_by_id(parameter)
+                                    )
+                                };
+                                sub_environment.named_types.insert(name.clone(), parameter);
+                            }
+                            for (parameter, ast_parameter) in parameters
+                                .into_iter()
+                                .zip(interface.type_parameters.as_ref().unwrap())
+                            {
+                                // TODO
+                                if let Some(ref extends) = ast_parameter.extends {
+                                    let new_to = DecafParser::synthesise_type_annotation(
+                                        extends,
+                                        &mut sub_environment,
+                                        checking_data,
+                                    );
+                                    checking_data
+                                        .types
+                                        .update_generic_extends(parameter, new_to);
+                                }
+                            }
+
+                            // TODO cyclic checking
+                            if let Some(ref extends) = interface.extends {
+                                let mut iter = extends.iter();
+                                let mut extends = DecafParser::synthesise_type_annotation(
+                                    iter.next().unwrap(),
+                                    &mut sub_environment,
+                                    checking_data,
+                                );
+                                for annotation in iter {
+                                    let new = DecafParser::synthesise_type_annotation(
+                                        annotation,
+                                        &mut sub_environment,
+                                        checking_data,
+                                    );
+                                    extends = checking_data.types.new_and_type(extends, new);
+                                }
+                                checking_data.types.set_extends_on_interface(ty, extends);
+                            }
+
+                            super::interfaces::synthesise_signatures(
+                                interface.type_parameters.as_deref(),
+                                interface.extends.as_deref(),
+                                &interface.members,
+                                super::interfaces::OnToType(ty),
+                                &mut sub_environment,
+                                checking_data,
+                            );
+
+                            // TODO temp as object types use the same environment.properties representation
+                            {
+                                let crate::LocalInformation {
+                                    current_properties,
+                                    prototypes,
+                                    ..
+                                } = sub_environment.info;
+                                environment
+                                    .info
+                                    .current_properties
+                                    .extend(current_properties);
+                                environment.info.prototypes.extend(prototypes);
+                            }
+                        } else {
+                            // TODO cyclic checking
+                            if let Some(ref extends) = interface.extends {
+                                let mut iter = extends.iter();
+                                let mut extends = DecafParser::synthesise_type_annotation(
+                                    iter.next().unwrap(),
+                                    environment,
+                                    checking_data,
+                                );
+                                for annotation in iter {
+                                    let new = DecafParser::synthesise_type_annotation(
+                                        annotation,
+                                        environment,
+                                        checking_data,
+                                    );
+                                    extends = checking_data.types.new_and_type(extends, new);
+                                }
+                                checking_data.types.set_extends_on_interface(ty, extends);
+                            }
+
+                            super::interfaces::synthesise_signatures(
+                                interface.type_parameters.as_deref(),
+                                interface.extends.as_deref(),
+                                &interface.members,
+                                super::interfaces::OnToType(ty),
+                                environment,
+                                checking_data,
+                            );
+                        }
+                    }
+                }
+                Declaration::Function(Decorated {
+                    on: function,
+                    decorators,
+                    ..
+                })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::Function(function),
+                            position: _,
+                        },
+                    decorators,
+                    ..
+                }) => {
+                    if let Some(VariableIdentifier::Standard(name, name_position)) =
+                        function.name.as_option_variable_identifier()
+                    {
+                        // Copied from classes hoisting
+                        let (overloads, actual) = if function.body.0.is_none() {
+                            let mut overloads = Vec::new();
+                            let shape = super::functions::synthesise_shape(
+                                function,
+                                environment,
+                                checking_data,
+                            );
+                            overloads.push(shape);
+
+                            // Read declarations until
+                            while let Some(overload_declaration) = second_items.next_if(|t| {
+								matches!( t, StatementOrDeclaration::Declaration( Declaration::Function(Decorated { on: func, .. })) if func.name.as_option_str().is_some_and(|n| n == name) && !func.has_body())
+							}) {
+								let parser::StatementOrDeclaration::Declaration(
+									Declaration::Function(Decorated { on: function, .. }),
+								) = &overload_declaration
+								else {
+									unreachable!()
+								};
+								let shape = super::functions::synthesise_shape(
+									function,
+									environment,
+									checking_data,
+								);
+								overloads.push(shape);
+							}
+
+                            let upcoming = second_items.peek().and_then(|next| {
+                                matches!(
+									next,
+									StatementOrDeclaration::Declaration(Declaration::Function(Decorated { on: func, .. }))
+									if
+										func.name.as_option_str().is_some_and(|n| n == name)
+										&& func.has_body()
+								)
+								.then_some(next)
+                            });
+
+                            if let Some(StatementOrDeclaration::Declaration(
+                                Declaration::Function(Decorated { on: function, .. }),
+                            )) = upcoming
+                            {
+                                let actual = super::functions::synthesise_shape(
+                                    function,
+                                    environment,
+                                    checking_data,
+                                );
+                                (overloads, actual)
+                            } else if function.name.is_declare {
+                                let actual = overloads.pop().unwrap();
+                                (overloads, actual)
+                            } else {
+                                // TODO what about `checking_data.options.lsp_mode`?
+                                checking_data.diagnostics_container.add_error(
+                                    TypeCheckError::FunctionWithoutBodyNotAllowedHere {
+                                        position: ASTNode::get_position(function)
+                                            .with_source(environment.get_source()),
+                                    },
+                                );
+                                continue;
+                            }
+                        } else {
+                            let actual = super::functions::synthesise_shape(
+                                function,
+                                environment,
+                                checking_data,
+                            );
+                            (Vec::new(), actual)
+                        };
+
+                        let internal_effect = get_internal_function_effect_from_decorators(
+                            decorators,
+                            name,
+                            environment,
+                        );
+                        let value = super::functions::build_overloaded_function(
+                            crate::FunctionId(environment.get_source(), function.position.start),
+                            crate::types::functions::FunctionBehavior::Function {
+                                this_id: TypeId::IS_ASSIGNED_VALUE_LATER,
+                                prototype: TypeId::IS_ASSIGNED_VALUE_LATER,
+                                is_async: function.header.is_async(),
+                                is_generator: function.header.is_generator(),
+                                name: TypeId::IS_ASSIGNED_VALUE_LATER,
+                            },
+                            overloads,
+                            actual,
+                            environment,
+                            &mut checking_data.types,
+                            &mut checking_data.diagnostics_container,
+                            if let Some(ie) = internal_effect {
+                                ie.into()
+                            } else {
+                                crate::types::FunctionEffect::Unknown
+                            },
                         );
 
-                    if let Err(error) = declare_variable {
-                        checking_data.diagnostics_container.add_error(
-                            crate::diagnostics::TypeCheckError::CannotRedeclareVariable {
-                                name: error.name.to_owned(),
-                                position: position.clone(),
-                            },
-                        )
+                        let variable_id =
+                            crate::VariableId(environment.get_source(), name_position.start);
+                        checking_data
+                            .local_type_mappings
+                            .variables_to_constraints
+                            .0
+                            .insert(variable_id, value);
+
+                        let argument = VariableRegisterArguments {
+                            // TODO functions are constant references
+                            constant: true,
+                            space: Some(value),
+                            initial_value: Some(value),
+                            allow_reregistration: false,
+                        };
+
+                        let name_position = name_position.with_source(environment.get_source());
+                        environment.register_variable_handle_error(
+                            name,
+                            argument,
+                            name_position,
+                            &mut checking_data.diagnostics_container,
+                            &mut checking_data.local_type_mappings,
+                            checking_data.options.record_all_assignments_and_reads,
+                        );
                     }
                 }
-                parser::Declaration::DeclareInterface(_) => {}
-                parser::Declaration::Import(_) => {}
-                parser::Declaration::Export(_) => {}
+                Declaration::Enum(Decorated { on: r#enum, .. })
+                | Declaration::Export(Decorated {
+                    on:
+                        ExportDeclaration::Item {
+                            exported: Exportable::EnumDeclaration(r#enum),
+                            position: _,
+                        },
+                    ..
+                }) => {
+                    let argument = VariableRegisterArguments {
+                        constant: true,
+                        space: None,
+                        initial_value: None,
+                        allow_reregistration: false,
+                    };
+
+                    environment.register_variable_handle_error(
+                        &r#enum.name,
+                        argument,
+                        r#enum.get_position().with_source(environment.get_source()),
+                        &mut checking_data.diagnostics_container,
+                        &mut checking_data.local_type_mappings,
+                        checking_data.options.record_all_assignments_and_reads,
+                    );
+                }
+                Declaration::DeclareVariable(DeclareVariableDeclaration {
+                    keyword: _,
+                    declarations,
+                    position: _,
+                    decorators: _,
+                }) => {
+                    for declaration in declarations {
+                        let constraint = get_annotation_from_declaration(
+                            declaration,
+                            environment,
+                            checking_data,
+                        );
+
+                        if constraint.is_none() {
+                            crate::utilities::notify!("constraint with no type?");
+                        }
+
+                        let value = constraint.unwrap_or(TypeId::ANY_TYPE);
+
+                        let ty = checking_data.types.register_type(crate::Type::RootPolyType(
+                            crate::types::PolyNature::Open(value),
+                        ));
+
+                        register_variable(
+                            declaration.name.get_ast_ref(),
+                            environment,
+                            checking_data,
+                            VariableRegisterArguments {
+                                // TODO based on keyword
+                                constant: true,
+                                space: None,
+                                initial_value: Some(ty),
+                                allow_reregistration: false,
+                            },
+                        );
+                    }
+                }
+                _ => {}
             },
+            StatementOrDeclaration::Imported { .. } | StatementOrDeclaration::Marker(_, _) => {}
         }
     }
 
-    // Third stage
-    for item in items {
-        if let StatementOrDeclaration::Declaration(Declaration::Function(func)) = item {
-            environment.new_function(
-                checking_data,
-                &func.on,
-                RegisterOnExisting(func.on.name.as_str().to_owned()),
-            );
+    // Third stage: functions
+    let third_stage_items = items.iter().peekable();
+    for item in third_stage_items {
+        if let StatementOrDeclaration::Declaration(
+            Declaration::Function(Decorated {
+                on: function,
+                decorators,
+                ..
+            })
+            | Declaration::Export(Decorated {
+                on:
+                    ExportDeclaration::Item {
+                        exported: Exportable::Function(function),
+                        position: _,
+                    },
+                decorators,
+                ..
+            }),
+        ) = item
+        {
+            if let Some(VariableIdentifier::Standard(name, name_position)) =
+                function.name.as_option_variable_identifier()
+            {
+                let variable_id = crate::VariableId(environment.get_source(), name_position.start);
+                let is_async = function.header.is_async();
+                let is_generator = function.header.is_generator();
+                let location = function
+                    .header
+                    .get_location()
+                    .map(|location| match location {
+                        parser::functions::FunctionLocationModifier::Server => "server".to_owned(),
+                        parser::functions::FunctionLocationModifier::Worker => "worker".to_owned(),
+                    });
+
+                let value = if function.name.is_declare {
+                    let (overloaded, _last) = (false, function);
+                    //  if function.has_body() {
+                    // } else {
+                    // 	let last = third_stage_items.find(|f| {
+                    // 		if let StatementOrDeclaration::Declaration(Declaration::Function(
+                    // 			Decorated { on: function, .. },
+                    // 		)) = f
+                    // 		{
+                    // 			function.has_body()
+                    // 		} else {
+                    // 			false
+                    // 		}
+                    // 	});
+                    // 	if let Some(StatementOrDeclaration::Declaration(Declaration::Function(
+                    // 		Decorated { on: function, .. },
+                    // 	))) = last
+                    // 	{
+                    // 		(true, function)
+                    // 	} else {
+                    // 		// Some error with non-overloads
+                    // 		continue;
+                    // 	}
+                    // };
+
+                    let internal_marker = get_internal_function_effect_from_decorators(
+                        decorators,
+                        function.name.as_option_str().unwrap(),
+                        environment,
+                    );
+
+                    synthesise_declare_statement_function(
+                        variable_id,
+                        overloaded,
+                        is_async,
+                        is_generator,
+                        location,
+                        name.clone(),
+                        internal_marker,
+                        function,
+                        environment,
+                        checking_data,
+                    )
+                } else {
+                    let (overloaded, _last) = (false, function);
+                    // if function.has_body() {
+                    // } else {
+                    // 	let last = third_stage_items.take_while(|f| {
+                    // 		if let StatementOrDeclaration::Declaration(Declaration::Function(
+                    // 			Decorated { on: function, .. },
+                    // 		)) = f
+                    // 		{
+                    // 			function.has_body()
+                    // 		} else {
+                    // 			false
+                    // 		}
+                    // 	});
+
+                    // 	if let Some(StatementOrDeclaration::Declaration(Declaration::Function(
+                    // 		Decorated { on: function, .. },
+                    // 	))) = last
+                    // 	{
+                    // 		(true, function)
+                    // 	} else {
+                    // 		// Some error with non-overloads
+                    // 		continue;
+                    // 	}
+                    // };
+
+                    synthesise_hoisted_statement_function(
+                        variable_id,
+                        overloaded,
+                        is_async,
+                        is_generator,
+                        location,
+                        name.clone(),
+                        function,
+                        environment,
+                        checking_data,
+                    )
+                };
+
+                checking_data
+                    .local_type_mappings
+                    .variables_to_constraints
+                    .0
+                    .insert(variable_id, value);
+
+                if let StatementOrDeclaration::Declaration(Declaration::Export(_)) = item {
+                    if let crate::Scope::Module {
+                        ref mut exported, ..
+                    } = environment.context_type.scope
+                    {
+                        exported
+                            .named
+                            .insert(name.clone(), (variable_id, VariableMutability::Constant));
+                    }
+                }
+            }
+        }
+    }
+}
+
+// TODO with `type`
+pub(super) fn part_to_name_pair<T: parser::declarations::ImportOrExport>(
+    item: &parser::declarations::ImportExportPart<T>,
+) -> Option<NamePair<'_>> {
+    if let VariableIdentifier::Standard(ref name, position) = item.name {
+        let value = match &item.alias {
+            Some(
+                parser::declarations::ImportExportName::Reference(item)
+                | parser::declarations::ImportExportName::Quoted(item, _),
+            ) => item,
+            Some(parser::declarations::ImportExportName::Marker(_)) => {
+                // TODO I think okay
+                return None;
+            }
+            None => name,
+        };
+        if T::PREFIX {
+            Some(NamePair {
+                value,
+                r#as: name,
+                position,
+            })
+        } else {
+            Some(NamePair {
+                value: name,
+                r#as: value,
+                position,
+            })
+        }
+    } else {
+        None
+    }
+}
+
+pub(super) fn hoist_variable_declaration<T: ReadFromFS>(
+    declaration: &parser::declarations::VariableDeclaration,
+    environment: &mut crate::context::Context<crate::context::environment::Syntax<'_>>,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
+) {
+    match declaration {
+        parser::declarations::VariableDeclaration::ConstDeclaration {
+            declarations,
+            position: _,
+        } => {
+            for declaration in declarations {
+                crate::utilities::notify!("TODO constraint needed to be set for free variable!!!");
+                let constraint =
+                    get_annotation_from_declaration(declaration, environment, checking_data);
+
+                register_variable(
+                    declaration.name.get_ast_ref(),
+                    environment,
+                    checking_data,
+                    VariableRegisterArguments {
+                        constant: true,
+                        space: constraint,
+                        // Value set later
+                        initial_value: None,
+                        allow_reregistration: false,
+                    },
+                );
+            }
+        }
+        parser::declarations::VariableDeclaration::LetDeclaration {
+            declarations,
+            position: _,
+        } => {
+            for declaration in declarations {
+                let constraint =
+                    get_annotation_from_declaration(declaration, environment, checking_data);
+
+                register_variable(
+                    declaration.name.get_ast_ref(),
+                    environment,
+                    checking_data,
+                    VariableRegisterArguments {
+                        constant: false,
+                        space: constraint,
+                        // Value set later
+                        initial_value: None,
+                        allow_reregistration: false,
+                    },
+                );
+            }
         }
     }
 }

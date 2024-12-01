@@ -1,20 +1,17 @@
-use std::borrow::Cow;
-
 use crate::{
-    ASTNode, Block, ParseError, ParseErrors, TSXKeyword, TSXToken, TypeAnnotation, VariableField,
-    VariableFieldInSourceCode, WithComment,
+    derive_ASTNode, ASTNode, Block, ParseError, ParseErrors, TSXKeyword, TSXToken, TypeAnnotation,
+    VariableField, WithComment,
 };
 use source_map::Span;
 use tokenizer_lib::Token;
 use visitable_derive::Visitable;
 
-pub type ExceptionVarField = WithComment<VariableField<VariableFieldInSourceCode>>;
+#[cfg_attr(target_family = "wasm", tsify::declare)]
+pub type ExceptionVarField = WithComment<VariableField>;
 
-#[derive(Debug, PartialEq, Eq, Clone, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, PartialEq, Clone, Visitable, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
 pub struct TryCatchStatement {
     pub try_inner: Block,
     pub catch_inner: Option<Block>,
@@ -24,118 +21,119 @@ pub struct TryCatchStatement {
 }
 
 impl ASTNode for TryCatchStatement {
-    fn get_position(&self) -> Cow<Span> {
-        Cow::Borrowed(&self.position)
+    fn get_position(&self) -> Span {
+        self.position
     }
 
     fn from_reader(
-        reader: &mut impl tokenizer_lib::TokenReader<TSXToken, Span>,
+        reader: &mut impl tokenizer_lib::TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
-        let start_span = reader.expect_next(TSXToken::Keyword(TSXKeyword::Try))?;
-        let try_inner = Block::from_reader(reader, state, settings)?;
+        let start = state.expect_keyword(reader, TSXKeyword::Try)?;
+        let try_inner = Block::from_reader(reader, state, options)?;
 
         let mut catch_inner: Option<Block> = None;
         let mut exception_var: Option<(ExceptionVarField, Option<TypeAnnotation>)> = None;
 
         // Optional `catch` clause
         if let Some(Token(TSXToken::Keyword(TSXKeyword::Catch), _)) = reader.peek() {
-            reader.expect_next(TSXToken::Keyword(TSXKeyword::Catch))?;
+            state.append_keyword_at_pos(reader.next().unwrap().1 .0, TSXKeyword::Catch);
 
             // Optional exception variable field `catch (e)`
             if let Some(Token(TSXToken::OpenParentheses, _)) = reader.peek() {
                 reader.expect_next(TSXToken::OpenParentheses)?;
                 let variable_field =
-                    WithComment::<VariableField<VariableFieldInSourceCode>>::from_reader(
-                        reader, state, settings,
-                    )?;
+                    WithComment::<VariableField>::from_reader(reader, state, options)?;
 
                 // Optional type reference `catch (e: type)`
                 let mut exception_var_type: Option<TypeAnnotation> = None;
-                if let Some(Token(TSXToken::Colon, _)) = reader.peek() {
-                    reader.expect_next(TSXToken::Colon)?;
-                    exception_var_type =
-                        Some(TypeAnnotation::from_reader(reader, state, settings)?);
+                if reader
+                    .conditional_next(|tok| {
+                        options.type_annotations && matches!(tok, TSXToken::Colon)
+                    })
+                    .is_some()
+                {
+                    exception_var_type = Some(TypeAnnotation::from_reader(reader, state, options)?);
                 }
                 exception_var = Some((variable_field, exception_var_type));
 
                 reader.expect_next(TSXToken::CloseParentheses)?;
             }
 
-            catch_inner = Some(Block::from_reader(reader, state, settings)?);
+            catch_inner = Some(Block::from_reader(reader, state, options)?);
         }
 
         // Optional `finally` clause
         let mut finally_inner: Option<Block> = None;
         if let Some(Token(TSXToken::Keyword(TSXKeyword::Finally), _)) = reader.peek() {
-            reader.expect_next(TSXToken::Keyword(TSXKeyword::Finally))?;
-            finally_inner = Some(Block::from_reader(reader, state, settings)?);
+            state.append_keyword_at_pos(reader.next().unwrap().1 .0, TSXKeyword::Finally);
+            finally_inner = Some(Block::from_reader(reader, state, options)?);
         }
 
         // Determine span based on which clauses are present
         let position: Span = if let Some(finally_block) = &finally_inner {
-            start_span.union(&finally_block.get_position())
+            start.union(finally_block.get_position())
         } else if let Some(catch_block) = &catch_inner {
-            start_span.union(&catch_block.get_position())
+            start.union(catch_block.get_position())
         } else {
             // Parse error if neither catch nor finally clause is present
             return Err(ParseError::new(
                 ParseErrors::ExpectedCatchOrFinally,
-                start_span,
+                reader.next().unwrap().get_span(),
             ));
         };
 
         Ok(Self {
-            position,
             try_inner,
-            exception_var,
             catch_inner,
+            exception_var,
             finally_inner,
+            position,
         })
     }
 
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         // Required `try` block
         buf.push_str("try");
-        settings.add_gap(buf);
+        options.push_gap_optionally(buf);
         self.try_inner
-            .to_string_from_buffer(buf, settings, depth + 1);
+            .to_string_from_buffer(buf, options, local.next_level());
 
         // Optional `catch` block
         if let Some(catch) = &self.catch_inner {
-            settings.add_gap(buf);
+            options.push_gap_optionally(buf);
             buf.push_str("catch");
-            settings.add_gap(buf);
+            options.push_gap_optionally(buf);
 
             // Optional exception variable: `catch (e)`
             if let Some((exception_var, exception_var_type)) = &self.exception_var {
                 buf.push('(');
-                exception_var.to_string_from_buffer(buf, settings, depth);
+                exception_var.to_string_from_buffer(buf, options, local);
 
                 // Optional type annotation: `catch (e: any)`
                 if let Some(exception_var_type) = exception_var_type {
                     buf.push_str(": ");
-                    exception_var_type.to_string_from_buffer(buf, settings, depth);
+                    exception_var_type.to_string_from_buffer(buf, options, local);
                 }
                 buf.push(')');
-                settings.add_gap(buf);
+                options.push_gap_optionally(buf);
             }
 
-            catch.to_string_from_buffer(buf, settings, depth + 1);
+            catch.to_string_from_buffer(buf, options, local.next_level());
         }
 
         // Optional `finally` block
         if let Some(finally) = &self.finally_inner {
-            settings.add_gap(buf);
+            options.push_gap_optionally(buf);
             buf.push_str("finally");
-            settings.add_gap(buf);
-            finally.to_string_from_buffer(buf, settings, depth + 1);
+            options.push_gap_optionally(buf);
+            finally.to_string_from_buffer(buf, options, local.next_level());
         }
     }
 }

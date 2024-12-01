@@ -1,15 +1,17 @@
 //! Contains wrappers for AST with comments
 
-use super::{ASTNode, ParseError, Span, TSXToken, TokenReader};
-use crate::{ParseOptions, Visitable};
-use std::{borrow::Cow, mem};
-use tokenizer_lib::Token;
+use super::{ASTNode, Span, TSXToken, TokenReader};
+use crate::{ParseOptions, ParseResult};
 
-#[derive(Debug, Clone, Eq)]
+use tokenizer_lib::Token;
+use visitable_derive::Visitable;
+
+#[cfg_attr(target_family = "wasm", derive(tsify::Tsify))]
+#[derive(Debug, Clone, Visitable)]
 pub enum WithComment<T> {
     None(T),
-    PrefixComment(String, T),
-    PostfixComment(T, String),
+    PrefixComment(String, T, Span),
+    PostfixComment(T, String, Span),
 }
 
 // Ignore comments for now
@@ -22,37 +24,19 @@ where
         &self,
         token_stream: &mut self_rust_tokenize::proc_macro2::TokenStream,
     ) {
-        match self {
-            WithComment::None(item)
-            | WithComment::PrefixComment(_, item)
-            | WithComment::PostfixComment(item, _) => {
-                let inner = self_rust_tokenize::SelfRustTokenize::to_tokens(item);
-                token_stream.extend(self_rust_tokenize::quote!(WithComment::None(#inner)))
-            }
-        }
+        let inner = self_rust_tokenize::SelfRustTokenize::to_tokens(self.get_ast_ref());
+        token_stream.extend(self_rust_tokenize::quote!(WithComment::None(#inner)));
     }
 }
 
-impl<T: Visitable> Visitable for WithComment<T> {
-    fn visit<TData>(
-        &self,
-        visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
-        data: &mut TData,
-        settings: &crate::VisitSettings,
-        chain: &mut temporary_annex::Annex<crate::Chain>,
-    ) {
-        self.get_ast_ref().visit(visitors, data, settings, chain)
-    }
-
-    fn visit_mut<TData>(
-        &mut self,
-        visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
-        data: &mut TData,
-        settings: &crate::VisitSettings,
-        chain: &mut temporary_annex::Annex<crate::Chain>,
-    ) {
-        self.get_ast_mut()
-            .visit_mut(visitors, data, settings, chain)
+// TODO comments
+#[cfg(feature = "serde-serialize")]
+impl<T: serde::Serialize> serde::Serialize for WithComment<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.get_ast_ref().serialize(serializer)
     }
 }
 
@@ -71,31 +55,24 @@ impl<T> From<T> for WithComment<T> {
 impl<T> WithComment<T> {
     pub fn get_ast(self) -> T {
         match self {
-            Self::None(ast) | Self::PrefixComment(_, ast) | Self::PostfixComment(ast, _) => ast,
+            Self::None(ast) | Self::PrefixComment(_, ast, _) | Self::PostfixComment(ast, _, _) => {
+                ast
+            }
         }
     }
 
     pub fn get_ast_ref(&self) -> &T {
         match self {
-            Self::None(ast) | Self::PrefixComment(_, ast) | Self::PostfixComment(ast, _) => ast,
+            Self::None(ast) | Self::PrefixComment(_, ast, _) | Self::PostfixComment(ast, _, _) => {
+                ast
+            }
         }
     }
 
     pub fn get_ast_mut(&mut self) -> &mut T {
         match self {
-            Self::None(ast) | Self::PrefixComment(_, ast) | Self::PostfixComment(ast, _) => ast,
-        }
-    }
-
-    // TODO not sure about location of this
-    pub fn add_comment(&mut self, comment: &str) {
-        match self {
-            Self::None(t) => {
-                let t = mem::replace(t, unsafe { mem::zeroed() });
-                *self = Self::PrefixComment(comment.to_owned(), t);
-            }
-            Self::PrefixComment(prev_comment, _) | Self::PostfixComment(_, prev_comment) => {
-                prev_comment.push_str(comment)
+            Self::None(ast) | Self::PrefixComment(_, ast, _) | Self::PostfixComment(ast, _, _) => {
+                ast
             }
         }
     }
@@ -103,80 +80,100 @@ impl<T> WithComment<T> {
     pub fn map<U>(self, cb: impl FnOnce(T) -> U) -> WithComment<U> {
         match self {
             Self::None(item) => WithComment::None(cb(item)),
-            Self::PrefixComment(comment, item) => WithComment::PrefixComment(comment, cb(item)),
-            Self::PostfixComment(item, comment) => WithComment::PostfixComment(cb(item), comment),
+            Self::PrefixComment(comment, item, position) => {
+                WithComment::PrefixComment(comment, cb(item), position)
+            }
+            Self::PostfixComment(item, comment, position) => {
+                WithComment::PostfixComment(cb(item), comment, position)
+            }
         }
     }
 }
 
 impl<T: ASTNode> ASTNode for WithComment<T> {
     fn from_reader(
-        reader: &mut impl TokenReader<TSXToken, Span>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &ParseOptions,
-    ) -> Result<WithComment<T>, ParseError> {
-        if matches!(
-            reader.peek(),
-            Some(Token(TSXToken::MultiLineComment(..), _))
-        ) {
-            let comment = if let TSXToken::MultiLineComment(comment) = reader.next().unwrap().0 {
-                comment
-            } else {
+        options: &ParseOptions,
+    ) -> ParseResult<Self> {
+        if let Some(token) =
+            reader.conditional_next(|t| matches!(t, TSXToken::MultiLineComment(..)))
+        {
+            let Token(TSXToken::MultiLineComment(comment), position) = token else {
                 unreachable!();
             };
-            Ok(Self::PrefixComment(
-                comment,
-                T::from_reader(reader, state, settings)?,
-            ))
+            let item = T::from_reader(reader, state, options)?;
+            let position = position.union(item.get_position());
+            Ok(Self::PrefixComment(comment, item, position))
         } else {
-            let key = T::from_reader(reader, state, settings)?;
-            if matches!(
-                reader.peek(),
-                Some(Token(TSXToken::MultiLineComment(..), _))
-            ) {
-                let comment = if let TSXToken::MultiLineComment(comment) = reader.next().unwrap().0
-                {
-                    comment
-                } else {
+            let item = T::from_reader(reader, state, options)?;
+            if let Some(token) =
+                reader.conditional_next(|t| matches!(t, TSXToken::MultiLineComment(..)))
+            {
+                let end = token.get_span();
+                let Token(TSXToken::MultiLineComment(comment), _) = token else {
                     unreachable!();
                 };
-                Ok(Self::PostfixComment(key, comment))
+                let position = item.get_position().union(end);
+                Ok(Self::PostfixComment(item, comment, position))
             } else {
-                Ok(Self::None(key))
+                Ok(Self::None(item))
             }
         }
     }
 
-    // TODO doesn't include comment space might be fine
-    fn get_position(&self) -> Cow<Span> {
+    fn get_position(&self) -> Span {
         match self {
             Self::None(ast) => ast.get_position(),
-            Self::PrefixComment(_, ast) => ast.get_position(),
-            Self::PostfixComment(ast, _) => ast.get_position(),
+            Self::PostfixComment(_, _, position) | Self::PrefixComment(_, _, position) => *position,
         }
     }
 
     fn to_string_from_buffer<U: source_map::ToString>(
         &self,
         buf: &mut U,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         match self {
-            Self::None(ast) => ast.to_string_from_buffer(buf, settings, depth),
-            Self::PrefixComment(comment, ast) => {
-                if settings.should_add_comment() {
+            Self::None(ast) => ast.to_string_from_buffer(buf, options, local),
+            Self::PrefixComment(content, ast, _) => {
+                if options.should_add_comment(content) {
                     buf.push_str("/*");
-                    buf.push_str_contains_new_line(comment.as_str());
-                    buf.push_str("*/ ");
+                    if options.pretty {
+                        // Perform indent correction
+                        // Have to use '\n' as `.lines` with it's handling of '\r'
+                        for (idx, line) in content.split('\n').enumerate() {
+                            if idx > 0 {
+                                buf.push_new_line();
+                            }
+                            options.add_indent(local.depth, buf);
+                            buf.push_str(line.trim());
+                        }
+                    // buf.push_new_line();
+                    } else {
+                        buf.push_str_contains_new_line(content.as_str());
+                    }
+                    buf.push_str("*/");
                 }
-                ast.to_string_from_buffer(buf, settings, depth);
+                ast.to_string_from_buffer(buf, options, local);
             }
-            Self::PostfixComment(ast, comment) => {
-                ast.to_string_from_buffer(buf, settings, depth);
-                if settings.should_add_comment() {
-                    buf.push_str(" /*");
-                    buf.push_str_contains_new_line(comment.as_str());
+            Self::PostfixComment(ast, comment, _) => {
+                ast.to_string_from_buffer(buf, options, local);
+                if options.should_add_comment(comment) {
+                    buf.push_str("/*");
+                    if options.pretty {
+                        // Perform indent correction
+                        for (idx, line) in comment.split('\n').enumerate() {
+                            if idx > 0 {
+                                buf.push_new_line();
+                            }
+                            options.add_indent(local.depth, buf);
+                            buf.push_str(line.trim());
+                        }
+                    } else {
+                        buf.push_str_contains_new_line(comment.as_str());
+                    }
                     buf.push_str("*/");
                 }
             }

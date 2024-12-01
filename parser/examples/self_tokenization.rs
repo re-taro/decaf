@@ -1,20 +1,13 @@
 #[cfg(feature = "self-rust-tokenize")]
 fn main() {
-    use decaf_parser::{ASTNode, Expression, SourceId};
+    use decaf_parser::{ASTNode, Expression};
     use self_rust_tokenize::SelfRustTokenize;
 
-    let expression = Expression::from_string(
-        "2 + 3".to_string(),
-        Default::default(),
-        SourceId::NULL,
-        None,
-        Default::default(),
-    )
-    .unwrap();
+    let expression = Expression::from_string("2 + 3".to_string(), Default::default()).unwrap();
 
     let tokens = SelfRustTokenize::to_tokens(&expression);
 
-    println!("{}", tokens);
+    println!("{tokens}");
 }
 
 #[cfg(not(feature = "self-rust-tokenize"))]

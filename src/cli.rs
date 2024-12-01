@@ -4,18 +4,21 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
-    time::Instant,
+    process::ExitCode,
+    time::{Duration, Instant},
 };
 
-use crate::{error_handling::emit_decaf_diagnostic, utilities::print_to_cli};
+use crate::{
+    build::{build, BuildConfig, BuildOutput, FailedBuildOutput},
+    check::check,
+    reporting::report_diagnostics_to_cli,
+    utilities::{print_to_cli, MaxDiagnostics},
+};
 use argh::FromArgs;
-use parser::SourceId;
-// use checker::{
-// 	BuildOutput, Plugin, Project, TypeCheckSettings, TypeCheckingVisitorGenerators,
-// 	TypeDefinitionModulePath,
-// };
+use checker::{CheckOutput, TypeCheckOptions};
+use parser::ParseOptions;
 
-/// Decaf Compiler
+/// The Decaf type-checker & compiler
 #[derive(FromArgs, Debug)]
 struct TopLevel {
     #[argh(subcommand)]
@@ -26,11 +29,11 @@ struct TopLevel {
 #[argh(subcommand)]
 enum CompilerSubCommand {
     Info(Info),
-    Build(BuildArguments),
     ASTExplorer(crate::ast_explorer::ExplorerArguments),
     Check(CheckArguments),
+    Experimental(ExperimentalArguments),
+    Repl(crate::repl::ReplArguments),
     // Run(RunArguments),
-    // Repl(repl::ReplArguments),
     // #[cfg(debug_assertions)]
     // Pack(Pack),
 }
@@ -40,37 +43,56 @@ enum CompilerSubCommand {
 #[argh(subcommand, name = "info")]
 struct Info {}
 
-// /// Generates binary form of a type definition module
-// #[derive(FromArgs, Debug)]
-// #[argh(subcommand, name = "pack")]
-// struct Pack {
-// 	/// path to module
-// 	#[argh(positional)]
-// 	input: PathBuf,
-// 	/// output path
-// 	#[argh(positional)]
-// 	output: PathBuf,
-// }
+/// Experimental Decaf features
+#[derive(FromArgs, Debug)]
+#[argh(subcommand, name = "experimental")]
+pub(crate) struct ExperimentalArguments {
+    #[argh(subcommand)]
+    nested: ExperimentalSubcommand,
+}
 
+#[derive(FromArgs, Debug)]
+#[argh(subcommand)]
+pub(crate) enum ExperimentalSubcommand {
+    Build(BuildArguments),
+    Format(FormatArguments),
+    #[cfg(not(target_family = "wasm"))]
+    Upgrade(UpgradeArguments),
+}
+
+// TODO definition file as list
 /// Build project
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "build")]
+// TODO: Can be refactored with bit to reduce memory
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct BuildArguments {
-    /// path to input file
+    /// path to input file (accepts glob)
     #[argh(positional)]
-    pub input: PathBuf,
+    pub input: String,
     /// path to output
     #[argh(positional)]
     pub output: Option<PathBuf>,
+    /// paths to definition files
+    #[argh(option, short = 'd')]
+    pub definition_file: Option<PathBuf>,
+
     /// whether to minify build output
     #[argh(switch, short = 'm')]
     pub minify: bool,
-    /// whether to include comments in the output
-    #[argh(switch)]
-    pub no_comments: bool,
     /// build source maps
     #[argh(switch)]
     pub source_maps: bool,
+    /// compact diagnostics
+    #[argh(switch)]
+    pub compact_diagnostics: bool,
+    /// enable optimising transforms (warning can currently break code)
+    #[argh(switch)]
+    pub tree_shake: bool,
+    /// maximum diagnostics to print (defaults to 30, pass `all` for all and `0` to count)
+    #[argh(option, default = "MaxDiagnostics::default()")]
+    pub max_diagnostics: MaxDiagnostics,
+
     #[cfg(not(target_family = "wasm"))]
     /// whether to display compile times
     #[argh(switch)]
@@ -81,19 +103,49 @@ pub(crate) struct BuildArguments {
 }
 
 /// Type check project
-#[derive(FromArgs, PartialEq, Debug)]
+#[derive(FromArgs, Debug)]
 #[argh(subcommand, name = "check")]
 pub(crate) struct CheckArguments {
-    /// path to input file
+    /// path to input file (accepts glob)
     #[argh(positional)]
-    pub input: PathBuf,
+    pub input: String,
     /// paths to definition files
     #[argh(option, short = 'd')]
     pub definition_file: Option<PathBuf>,
     /// whether to re-check on file changes
     #[argh(switch)]
     pub watch: bool,
+    /// whether to display check time
+    #[argh(switch)]
+    pub timings: bool,
+    /// compact diagnostics
+    #[argh(switch)]
+    pub compact_diagnostics: bool,
+    /// more behavior for numbers
+    #[argh(switch)]
+    pub advanced_numbers: bool,
+    /// maximum diagnostics to print (defaults to 30, pass `all` for all and `0` to count)
+    #[argh(option, default = "MaxDiagnostics::default()")]
+    pub max_diagnostics: MaxDiagnostics,
 }
+
+/// Formats file in-place
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "format")]
+pub(crate) struct FormatArguments {
+    /// path to input file
+    #[argh(positional)]
+    pub path: PathBuf,
+    /// check whether file is formatted
+    #[argh(switch)]
+    pub check: bool,
+}
+
+/// Upgrade/update the decaf binary to the latest version
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "upgrade")]
+#[cfg(not(target_family = "wasm"))]
+pub(crate) struct UpgradeArguments {}
 
 // /// Run project using Deno
 // #[derive(FromArgs, PartialEq, Debug)]
@@ -124,57 +176,350 @@ fn file_system_resolver(path: &Path) -> Option<String> {
     }
 }
 
-pub fn run_cli<T: crate::FSResolver, U: crate::CLIInputResolver>(
+fn run_checker<T: crate::ReadFromFS>(
+    entry_points: Vec<PathBuf>,
+    read_file: &T,
+    timings: bool,
+    definition_file: Option<PathBuf>,
+    max_diagnostics: MaxDiagnostics,
+    type_check_options: TypeCheckOptions,
+    compact_diagnostics: bool,
+) -> ExitCode {
+    let result = check(
+        entry_points,
+        read_file,
+        definition_file.as_deref(),
+        type_check_options,
+    );
+
+    let CheckOutput {
+        diagnostics,
+        module_contents,
+        chronometer,
+        types,
+        ..
+    } = result;
+
+    let diagnostics_count = diagnostics.count();
+    let current = timings.then(std::time::Instant::now);
+
+    let result = if diagnostics.contains_error() {
+        if let MaxDiagnostics::FixedTo(0) = max_diagnostics {
+            let count = diagnostics.into_iter().count();
+            print_to_cli(format_args!(
+                "Found {count} type errors and warnings {}",
+                console::Emoji(" 😬", ":/")
+            ))
+        } else {
+            report_diagnostics_to_cli(
+                diagnostics,
+                &module_contents,
+                compact_diagnostics,
+                max_diagnostics,
+            )
+            .unwrap();
+        }
+        ExitCode::FAILURE
+    } else {
+        // May be warnings or information here
+        report_diagnostics_to_cli(
+            diagnostics,
+            &module_contents,
+            compact_diagnostics,
+            max_diagnostics,
+        )
+        .unwrap();
+        print_to_cli(format_args!(
+            "No type errors found {}",
+            console::Emoji("🎉", ":)")
+        ));
+        ExitCode::SUCCESS
+    };
+
+    #[cfg(not(target_family = "wasm"))]
+    if timings {
+        let reporting = current.unwrap().elapsed();
+        eprintln!("---\n");
+        eprintln!("Diagnostics:\t{}", diagnostics_count);
+        eprintln!("Types:      \t{}", types.count_of_types());
+        eprintln!("Lines:      \t{}", chronometer.lines);
+        eprintln!("Cache read: \t{:?}", chronometer.cached);
+        eprintln!("FS read:    \t{:?}", chronometer.fs);
+        eprintln!("Parsed in:  \t{:?}", chronometer.parse);
+        eprintln!("Checked in: \t{:?}", chronometer.check);
+        eprintln!("Reporting:  \t{:?}", reporting);
+    }
+
+    result
+}
+
+pub fn run_cli<T: crate::ReadFromFS, U: crate::WriteToFS>(
     cli_arguments: &[&str],
-    fs_resolver: T,
-    cli_input_resolver: U,
-) {
+    read_file: T,
+    write_file: U,
+) -> ExitCode {
     let command = match FromArgs::from_args(&["decaf-cli"], cli_arguments) {
         Ok(TopLevel { nested }) => nested,
         Err(err) => {
             print_to_cli(format_args!("{}", err.output));
-            return;
+            return ExitCode::FAILURE;
         }
     };
 
     match command {
         CompilerSubCommand::Info(_) => {
             crate::utilities::print_info();
+            ExitCode::SUCCESS
         }
-        CompilerSubCommand::Build(build_config) => {
-            let output = build_config.output.unwrap_or("decaf_output.js".into());
-            let (fs, output) = crate::commands::build(fs_resolver, &build_config.input, &output);
-            match output {
-                Ok(output) => {
-                    for output in output.outputs {
-                        std::fs::write(output.output_path, output.content).unwrap();
-                    }
-                    for diagnostic in output.temp_diagnostics {
-                        let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
-                        emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
-                    }
-                }
-                Err(diagnostics) => {
-                    for diagnostic in diagnostics {
-                        let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
-                        emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
-                    }
-                }
-            }
-        }
-        CompilerSubCommand::ASTExplorer(mut repl) => repl.run(fs_resolver, cli_input_resolver),
         CompilerSubCommand::Check(check_arguments) => {
             let CheckArguments {
                 input,
-                watch: _,
+                watch,
                 definition_file,
+                timings,
+                compact_diagnostics,
+                max_diagnostics,
+                advanced_numbers,
             } = check_arguments;
-            let (fs, diagnostics, _others) =
-                crate::commands::check(&fs_resolver, &input, definition_file.as_deref());
-            for diagnostic in diagnostics.into_iter() {
-                let source_id = diagnostic.sources().next().unwrap_or(SourceId::NULL);
-                emit_decaf_diagnostic(diagnostic, &fs, source_id).unwrap();
+
+            let type_check_options: TypeCheckOptions = if cfg!(target_family = "wasm") {
+                Default::default()
+            } else {
+                TypeCheckOptions {
+                    measure_time: timings,
+                    advanced_numbers,
+                    ..TypeCheckOptions::default()
+                }
+            };
+
+            let entry_points = match get_entry_points(input) {
+                Ok(entry_points) => entry_points,
+                Err(_) => {
+                    print_to_cli(format_args!("Entry point error"));
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            // run_checker is written three times because cloning
+            if watch {
+                #[cfg(target_family = "wasm")]
+                panic!("'watch' mode not supported on WASM");
+
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    use notify::Watcher;
+                    use notify_debouncer_full::new_debouncer;
+
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let mut debouncer =
+                        new_debouncer(Duration::from_millis(200), None, tx).unwrap();
+
+                    for e in &entry_points {
+                        debouncer
+                            .watcher()
+                            .watch(e, notify::RecursiveMode::Recursive)
+                            .unwrap();
+                    }
+
+                    let _ = run_checker(
+                        entry_points.clone(),
+                        &read_file,
+                        timings,
+                        definition_file.clone(),
+                        max_diagnostics,
+                        type_check_options.clone(),
+                        compact_diagnostics,
+                    );
+
+                    for res in rx {
+                        match res {
+                            Ok(_e) => {
+                                let _out = run_checker(
+                                    entry_points.clone(),
+                                    &read_file,
+                                    timings,
+                                    definition_file.clone(),
+                                    max_diagnostics,
+                                    type_check_options.clone(),
+                                    compact_diagnostics,
+                                );
+                            }
+                            Err(error) => eprintln!("Error: {error:?}"),
+                        }
+                    }
+
+                    unreachable!()
+                }
+            } else {
+                run_checker(
+                    entry_points,
+                    &read_file,
+                    timings,
+                    definition_file,
+                    max_diagnostics,
+                    type_check_options,
+                    compact_diagnostics,
+                )
             }
+        }
+        CompilerSubCommand::Experimental(ExperimentalArguments {
+            nested: ExperimentalSubcommand::Build(build_config),
+        }) => {
+            let output_path = build_config.output.unwrap_or("decaf.out.js".into());
+
+            let entry_points = match get_entry_points(build_config.input) {
+                Ok(entry_points) => entry_points,
+                Err(_) => {
+                    print_to_cli(format_args!("Entry point error"));
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            #[cfg(not(target_family = "wasm"))]
+            let start = build_config.timings.then(std::time::Instant::now);
+
+            let config = BuildConfig {
+                tree_shake: build_config.tree_shake,
+                strip_whitespace: build_config.minify,
+                source_maps: build_config.source_maps,
+                type_definition_module: build_config.definition_file,
+                // TODO not sure
+                output_path,
+                other_transformers: None,
+                lsp_mode: false,
+            };
+
+            let output = build(entry_points, &read_file, config);
+
+            #[cfg(not(target_family = "wasm"))]
+            if let Some(start) = start {
+                eprintln!("Checked & built in {:?}", start.elapsed());
+            };
+
+            let compact_diagnostics = build_config.compact_diagnostics;
+
+            match output {
+                Ok(BuildOutput {
+                    artifacts,
+                    check_output:
+                        CheckOutput {
+                            module_contents,
+                            diagnostics,
+                            ..
+                        },
+                }) => {
+                    for output in artifacts {
+                        write_file(output.output_path.as_path(), output.content);
+                    }
+                    report_diagnostics_to_cli(
+                        diagnostics,
+                        &module_contents,
+                        compact_diagnostics,
+                        build_config.max_diagnostics,
+                    )
+                    .unwrap();
+                    print_to_cli(format_args!(
+                        "Project built successfully {}",
+                        console::Emoji("🎉", ":)")
+                    ));
+                    ExitCode::SUCCESS
+                }
+                Err(FailedBuildOutput(CheckOutput {
+                    module_contents,
+                    diagnostics,
+                    ..
+                })) => {
+                    report_diagnostics_to_cli(
+                        diagnostics,
+                        &module_contents,
+                        compact_diagnostics,
+                        build_config.max_diagnostics,
+                    )
+                    .unwrap();
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        CompilerSubCommand::Experimental(ExperimentalArguments {
+            nested: ExperimentalSubcommand::Format(FormatArguments { path, check }),
+        }) => {
+            use parser::{source_map::FileSystem, ASTNode, Module, ToStringOptions};
+
+            let input = match fs::read_to_string(&path) {
+                Ok(string) => string,
+                Err(err) => {
+                    print_to_cli(format_args!("{err:?}"));
+                    return ExitCode::FAILURE;
+                }
+            };
+            let mut files =
+                parser::source_map::MapFileStore::<parser::source_map::NoPathMap>::default();
+            let source_id = files.new_source_id(path.clone(), input.clone());
+            let res = Module::from_string(
+                input.clone(),
+                ParseOptions {
+                    retain_blank_lines: true,
+                    ..Default::default()
+                },
+            );
+            match res {
+                Ok(module) => {
+                    let options = ToStringOptions {
+                        trailing_semicolon: true,
+                        include_type_annotations: true,
+                        ..Default::default()
+                    };
+                    let output = module.to_string(&options);
+                    if check {
+                        if input == output {
+                            ExitCode::SUCCESS
+                        } else {
+                            print_to_cli(format_args!(
+                                "{}",
+                                pretty_assertions::StrComparison::new(&input, &output)
+                            ));
+                            ExitCode::FAILURE
+                        }
+                    } else {
+                        let _ = fs::write(path.clone(), output);
+                        print_to_cli(format_args!("Formatted {}", path.display()));
+                        ExitCode::SUCCESS
+                    }
+                }
+                Err(err) => {
+                    report_diagnostics_to_cli(
+                        std::iter::once((err, source_id).into()),
+                        &files,
+                        false,
+                        MaxDiagnostics::All,
+                    )
+                    .unwrap();
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        #[cfg(not(target_family = "wasm"))]
+        CompilerSubCommand::Experimental(ExperimentalArguments {
+            nested: ExperimentalSubcommand::Upgrade(UpgradeArguments {}),
+        }) => match crate::utilities::upgrade_self() {
+            Ok(name) => {
+                print_to_cli(format_args!("Successfully updated to {name}"));
+                std::process::ExitCode::SUCCESS
+            }
+            Err(err) => {
+                print_to_cli(format_args!("Error: {err}\nCould not upgrade binary. Retry manually from {repository}/releases", repository=env!("CARGO_PKG_REPOSITORY")));
+                std::process::ExitCode::FAILURE
+            }
+        },
+        CompilerSubCommand::ASTExplorer(mut repl) => {
+            repl.run(&read_file);
+            // TODO not always true
+            ExitCode::SUCCESS
+        }
+        CompilerSubCommand::Repl(argument) => {
+            crate::repl::run_repl(argument);
+            // TODO not always true
+            ExitCode::SUCCESS
         } // CompilerSubCommand::Run(run_arguments) => {
           // 	let build_arguments = BuildArguments {
           // 		input: run_arguments.input,
@@ -205,17 +550,39 @@ pub fn run_cli<T: crate::FSResolver, U: crate::CLIInputResolver>(
           // 	)
           // 	.unwrap();
 
-          // 	std::fs::write(&output, &file).unwrap();
-          // 	// println!("Wrote binary context out to {}", output.display());
-
           // 	let _root_ctx = checker::root_context_from_bytes(file);
-          // 	println!("Registered {} types", _root_ctx.types.len());
+          // 	println!("Registered {} types", _root_ctx.types.len();
           // }
-          // CompilerSubCommand::Repl(argument) => repl::run_deno_repl(argument),
     }
 }
 
-/// TODO + deserialize
-struct _Settings {
-    current_working_directory: Option<PathBuf>,
+// `glob` library does not work on WASM :(
+#[cfg(target_family = "wasm")]
+fn get_entry_points(input: String) -> Result<Vec<PathBuf>, ()> {
+    Ok(vec![input.into()])
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn get_entry_points(input: String) -> Result<Vec<PathBuf>, ()> {
+    match glob::glob(&input) {
+        Ok(files) => {
+            let files = files
+                .into_iter()
+                .collect::<Result<Vec<PathBuf>, glob::GlobError>>()
+                .map_err(|err| {
+                    eprintln!("{err:?}");
+                })?;
+
+            if files.is_empty() {
+                eprintln!("Input {input:?} matched no files");
+                Err(())
+            } else {
+                Ok(files)
+            }
+        }
+        Err(err) => {
+            eprintln!("{err:?}");
+            Err(())
+        }
+    }
 }

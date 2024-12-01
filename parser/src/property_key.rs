@@ -1,86 +1,115 @@
-use std::{borrow::Cow, fmt::Debug};
-
-use crate::TSXToken;
+use crate::{
+    derive_ASTNode,
+    visiting::{Chain, VisitOptions, Visitable},
+    Quoted, TSXToken,
+};
+use get_field_by_type::GetFieldByType;
 use source_map::Span;
-use tokenizer_lib::{Token, TokenReader};
+use std::fmt::Debug;
+use temporary_annex::Annex;
+use tokenizer_lib::{sized_tokens::TokenReaderWithTokenEnds, Token, TokenReader};
 
 use crate::{
-    errors::parse_lexing_error, tokens::token_as_identifier, ASTNode, Expression, NumberStructure,
-    ParseOptions, ParseResult,
+    errors::parse_lexing_error, number::NumberRepresentation, tokens::token_as_identifier, ASTNode,
+    Expression, ParseOptions, ParseResult,
 };
 
-// pub enum GeneralPropertyKey {
-// 	AlwaysPublicPropertyKey(PropertyKey<AlwaysPublic>),
-// 	PublicOrPrivatePropertyKey(PropertyKey<PublicOrPrivate>),
-// }
+pub trait PropertyKeyKind: Debug + PartialEq + Eq + Clone + Sized + Send + Sync + 'static {
+    fn parse_identifier(
+        first: Token<TSXToken, crate::TokenStart>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
+    ) -> ParseResult<(String, Span, Self)>;
 
-pub trait PropertyKeyKind: Debug + PartialEq + Eq + Clone {
-    type Private: Debug + Sync + Send + Clone + PartialEq;
+    fn is_private(&self) -> bool;
 
-    fn parse_ident(
-        first: Token<TSXToken, Span>,
-        reader: &mut impl TokenReader<TSXToken, Span>,
-    ) -> ParseResult<(String, Span, Self::Private)>;
+    /// TODO temp
+    fn new_public() -> Self;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[apply(derive_ASTNode)]
 pub struct AlwaysPublic;
 
-impl PropertyKeyKind for AlwaysPublic {
-    type Private = ();
+// #[cfg_attr(target_family = "wasm", wasm_bindgen::prelude::wasm_bindgen(typescript_custom_section))]
+#[allow(dead_code)]
+// const TYPES_ALWAYS_PUBLIC: &str = r"
+// 	export type AlwaysPublic = false;
+// ";
 
-    fn parse_ident(
-        first: Token<TSXToken, Span>,
-        _reader: &mut impl TokenReader<TSXToken, Span>,
-    ) -> ParseResult<(String, Span, Self::Private)> {
-        token_as_identifier(first, "property key").map(|(name, position)| (name, position, ()))
+impl PropertyKeyKind for AlwaysPublic {
+    fn parse_identifier(
+        first: Token<TSXToken, crate::TokenStart>,
+        _reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
+    ) -> ParseResult<(String, Span, Self)> {
+        token_as_identifier(first, "property key")
+            .map(|(name, position)| (name, position, Self::new_public()))
+    }
+
+    fn is_private(&self) -> bool {
+        false
+    }
+
+    fn new_public() -> Self {
+        AlwaysPublic
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublicOrPrivate;
+#[apply(derive_ASTNode)]
+pub enum PublicOrPrivate {
+    Public,
+    Private,
+}
+
+// #[cfg_attr(target_family = "wasm", wasm_bindgen::prelude::wasm_bindgen(typescript_custom_section))]
+#[allow(dead_code)]
+// const TYPES_PUBLIC_OR_PRIVATE: &str = r"
+// 	export type PublicOrPrivate = boolean;
+// ";
 
 impl PropertyKeyKind for PublicOrPrivate {
-    type Private = bool;
-
-    fn parse_ident(
-        first: Token<TSXToken, Span>,
-        reader: &mut impl TokenReader<TSXToken, Span>,
-    ) -> ParseResult<(String, Span, Self::Private)> {
+    fn parse_identifier(
+        first: Token<TSXToken, crate::TokenStart>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
+    ) -> ParseResult<(String, Span, Self)> {
         if matches!(first.0, TSXToken::HashTag) {
             token_as_identifier(
                 reader.next().ok_or_else(parse_lexing_error)?,
                 "property key",
             )
-            .map(|(name, position)| (name, position, true))
+            .map(|(name, position)| (name, position, Self::Private))
         } else {
             token_as_identifier(first, "property key")
-                .map(|(name, position)| (name, position, false))
+                .map(|(name, position)| (name, position, Self::Public))
         }
+    }
+
+    fn is_private(&self) -> bool {
+        matches!(self, Self::Private)
+    }
+
+    fn new_public() -> Self {
+        Self::Public
     }
 }
 
 /// A key for a member in a class or object literal
-#[derive(Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, PartialEq, Eq, Clone, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
 pub enum PropertyKey<T: PropertyKeyKind> {
-    Ident(String, Span, T::Private),
-    StringLiteral(String, Span),
-    NumberLiteral(NumberStructure, Span),
+    Identifier(String, Span, T),
+    StringLiteral(String, Quoted, Span),
+    NumberLiteral(NumberRepresentation, Span),
     /// Includes anything in the `[...]` maybe a symbol
     Computed(Box<Expression>, Span),
 }
 
 impl<U: PropertyKeyKind> PropertyKey<U> {
-    pub fn get_position(&self) -> Cow<Span> {
+    pub fn is_private(&self) -> bool {
         match self {
-            PropertyKey::Ident(_, pos, _)
-            | PropertyKey::StringLiteral(_, pos)
-            | PropertyKey::NumberLiteral(_, pos)
-            | PropertyKey::Computed(_, pos) => Cow::Borrowed(pos),
+            PropertyKey::Identifier(_, _, p) => U::is_private(p),
+            _ => false,
         }
     }
 }
@@ -88,46 +117,55 @@ impl<U: PropertyKeyKind> PropertyKey<U> {
 impl<U: PropertyKeyKind> PartialEq<str> for PropertyKey<U> {
     fn eq(&self, other: &str) -> bool {
         match self {
-            PropertyKey::Ident(name, _, _) | PropertyKey::StringLiteral(name, _) => name == other,
+            PropertyKey::Identifier(name, _, _) | PropertyKey::StringLiteral(name, _, _) => {
+                name == other
+            }
             PropertyKey::NumberLiteral(_, _) | PropertyKey::Computed(_, _) => false,
         }
     }
 }
 
-impl<U: PropertyKeyKind + 'static> ASTNode for PropertyKey<U> {
-    fn get_position(&self) -> Cow<Span> {
-        match self {
-            PropertyKey::Ident(_, pos, _)
-            | PropertyKey::StringLiteral(_, pos)
-            | PropertyKey::NumberLiteral(_, pos)
-            | PropertyKey::Computed(_, pos) => Cow::Borrowed(pos),
-        }
+impl<U: PropertyKeyKind> ASTNode for PropertyKey<U> {
+    fn get_position(&self) -> Span {
+        *self.get()
     }
 
     fn from_reader(
-        reader: &mut impl TokenReader<TSXToken, Span>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &ParseOptions,
+        options: &ParseOptions,
     ) -> ParseResult<Self> {
         match reader.next().ok_or_else(parse_lexing_error)? {
-            Token(TSXToken::DoubleQuotedStringLiteral(content), position)
-            | Token(TSXToken::SingleQuotedStringLiteral(content), position) => {
-                Ok(Self::StringLiteral(content, position))
+            Token(TSXToken::StringLiteral(content, quoted), start) => {
+                let position = start.with_length(content.len() + 2);
+                Ok(Self::StringLiteral(content, quoted, position))
             }
-            Token(TSXToken::NumberLiteral(value), position) => {
-                Ok(Self::NumberLiteral(value.parse().unwrap(), position))
+            Token(TSXToken::NumberLiteral(value), start) => {
+                let position = start.with_length(value.len());
+                match value.parse::<NumberRepresentation>() {
+                    Ok(number) => Ok(Self::NumberLiteral(number, position)),
+                    Err(_) => {
+                        // TODO this should never happen
+                        Err(crate::ParseError::new(
+                            crate::ParseErrors::InvalidNumberLiteral,
+                            position,
+                        ))
+                    }
+                }
             }
-            Token(TSXToken::OpenBracket, start_pos) => {
-                let expression = Expression::from_reader(reader, state, settings)?;
-                let end_pos = reader.expect_next(TSXToken::CloseBracket)?;
-                Ok(Self::Computed(
-                    Box::new(expression),
-                    start_pos.union(&end_pos),
-                ))
+            Token(TSXToken::OpenBracket, start) => {
+                let expression = Expression::from_reader(reader, state, options)?;
+                let end = reader.expect_next_get_end(TSXToken::CloseBracket)?;
+                Ok(Self::Computed(Box::new(expression), start.union(end)))
             }
             token => {
-                let (name, position, private) = U::parse_ident(token, reader)?;
-                Ok(Self::Ident(name, position, private))
+                if token.0.is_comment() {
+                    // TODO could add marker?
+                    Self::from_reader(reader, state, options)
+                } else {
+                    let (name, position, private) = U::parse_identifier(token, reader)?;
+                    Ok(Self::Identifier(name, position, private))
+                }
             }
         }
     }
@@ -135,53 +173,83 @@ impl<U: PropertyKeyKind + 'static> ASTNode for PropertyKey<U> {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         match self {
-            Self::Ident(ident, _pos, _) => buf.push_str(ident.as_str()),
+            Self::Identifier(ident, _pos, _) => buf.push_str(ident.as_str()),
             Self::NumberLiteral(number, _) => buf.push_str(&number.to_string()),
-            Self::StringLiteral(string, _) => {
-                buf.push('"');
+            Self::StringLiteral(string, quoted, _) => {
+                buf.push(quoted.as_char());
                 buf.push_str(string.as_str());
-                buf.push('"');
+                buf.push(quoted.as_char());
             }
             Self::Computed(expression, _) => {
                 buf.push('[');
-                expression.to_string_from_buffer(buf, settings, depth);
+                expression.to_string_from_buffer(buf, options, local);
                 buf.push(']');
             }
         }
     }
 }
 
-// TODO
-// impl WithComment<PropertyKey> {
-// 	pub(crate) fn visit<TData>(
-// 		&self,
-// 		visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
-// 		data: &mut TData,
-// 		chain: &mut temporary_annex::Annex<crate::visiting::Chain>,
-// 		location: PropertyKeyLocation,
-// 	) {
-// 		visitors.visit_variable(
-// 			&ImmutableVariableOrPropertyPart::PropertyKey(self, location),
-// 			data,
-// 			chain,
-// 		);
-// 	}
+// TODO visit expression?
+impl Visitable for PropertyKey<PublicOrPrivate> {
+    fn visit<TData>(
+        &self,
+        visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
+        data: &mut TData,
+        _options: &VisitOptions,
+        chain: &mut Annex<Chain>,
+    ) {
+        visitors.visit_variable(
+            &crate::visiting::ImmutableVariableOrProperty::ClassPropertyKey(self),
+            data,
+            chain,
+        );
+    }
 
-// 	pub(crate) fn visit_mut<TData>(
-// 		&mut self,
-// 		visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
-// 		data: &mut TData,
-// 		chain: &mut temporary_annex::Annex<crate::visiting::Chain>,
-// 		location: PropertyKeyLocation,
-// 	) {
-// 		visitors.visit_variable_mut(
-// 			&mut MutableVariablePart::PropertyKey(self, location),
-// 			data,
-// 			chain,
-// 		);
-// 	}
-// }
+    fn visit_mut<TData>(
+        &mut self,
+        visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
+        data: &mut TData,
+        _options: &VisitOptions,
+        chain: &mut Annex<Chain>,
+    ) {
+        visitors.visit_variable_mut(
+            &mut crate::visiting::MutableVariableOrProperty::ClassPropertyKey(self),
+            data,
+            chain,
+        );
+    }
+}
+
+impl Visitable for PropertyKey<AlwaysPublic> {
+    fn visit<TData>(
+        &self,
+        visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
+        data: &mut TData,
+        _options: &VisitOptions,
+        chain: &mut Annex<Chain>,
+    ) {
+        visitors.visit_variable(
+            &crate::visiting::ImmutableVariableOrProperty::ObjectPropertyKey(self),
+            data,
+            chain,
+        );
+    }
+
+    fn visit_mut<TData>(
+        &mut self,
+        visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
+        data: &mut TData,
+        _options: &VisitOptions,
+        chain: &mut Annex<Chain>,
+    ) {
+        visitors.visit_variable_mut(
+            &mut crate::visiting::MutableVariableOrProperty::ObjectPropertyKey(self),
+            data,
+            chain,
+        );
+    }
+}

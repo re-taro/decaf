@@ -1,18 +1,13 @@
-use std::borrow::Cow;
-
-use crate::{TSXKeyword, TSXToken};
+use crate::{derive_ASTNode, TSXKeyword, TSXToken};
 use iterator_endiate::EndiateIteratorExt;
 use source_map::Span;
-use tokenizer_lib::Token;
+use tokenizer_lib::{sized_tokens::TokenReaderWithTokenEnds, Token};
 use visitable_derive::Visitable;
 
 use crate::{errors::parse_lexing_error, tokens::token_as_identifier, ASTNode, Expression};
 
-#[derive(Debug, Clone, PartialEq, Eq, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[derive(Debug, Clone, PartialEq, Visitable)]
+#[apply(derive_ASTNode)]
 pub struct EnumDeclaration {
     pub is_constant: bool,
     pub name: String,
@@ -21,21 +16,21 @@ pub struct EnumDeclaration {
 }
 
 impl ASTNode for EnumDeclaration {
-    fn get_position(&self) -> Cow<Span> {
-        Cow::Borrowed(&self.position)
+    fn get_position(&self) -> Span {
+        self.position
     }
 
     fn from_reader(
-        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, Span>,
+        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
         let const_pos = reader
             .conditional_next(|tok| matches!(tok, TSXToken::Keyword(TSXKeyword::Const)))
             .map(|Token(_, pos)| pos);
 
         let is_constant = const_pos.is_some();
-        let enum_pos = reader.expect_next(TSXToken::Keyword(TSXKeyword::Enum))?;
+        let enum_pos = state.expect_keyword(reader, TSXKeyword::Enum)?;
         let (name, _) =
             token_as_identifier(reader.next().ok_or_else(parse_lexing_error)?, "Enum name")?;
         reader.expect_next(TSXToken::OpenBrace)?;
@@ -44,16 +39,16 @@ impl ASTNode for EnumDeclaration {
             if let Some(Token(TSXToken::CloseBrace, _)) = reader.peek() {
                 break;
             }
-            members.push(EnumMember::from_reader(reader, state, settings)?);
+            members.push(EnumMember::from_reader(reader, state, options)?);
             // Commas are optional
             if let Some(Token(TSXToken::Comma, _)) = reader.peek() {
                 reader.next();
             }
         }
-        let end_pos = reader.expect_next(TSXToken::CloseBrace)?;
+        let end = reader.expect_next_get_end(TSXToken::CloseBrace)?;
         Ok(EnumDeclaration {
             is_constant,
-            position: const_pos.unwrap_or(enum_pos).union(&end_pos),
+            position: const_pos.unwrap_or(enum_pos).union(end),
             name,
             members,
         })
@@ -62,38 +57,37 @@ impl ASTNode for EnumDeclaration {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
-        if self.is_constant {
-            buf.push_str("const ");
-        }
-        buf.push_str("enum ");
-        buf.push_str(&self.name);
-        settings.add_gap(buf);
-        buf.push_str("{");
-        for (at_end, member) in self.members.iter().endiate() {
-            if settings.pretty {
+        if options.include_type_annotations {
+            if self.is_constant {
+                buf.push_str("const ");
+            }
+            buf.push_str("enum ");
+            buf.push_str(&self.name);
+            options.push_gap_optionally(buf);
+            buf.push_str("{");
+            for (at_end, member) in self.members.iter().endiate() {
+                if options.pretty {
+                    buf.push_new_line();
+                    options.add_indent(local.depth + 1, buf);
+                }
+                member.to_string_from_buffer(buf, options, local);
+                if !options.pretty && !at_end {
+                    buf.push(',');
+                }
+            }
+            if options.pretty && !self.members.is_empty() {
                 buf.push_new_line();
-                settings.add_indent(depth + 1, buf);
             }
-            member.to_string_from_buffer(buf, settings, depth);
-            if !settings.pretty && !at_end {
-                buf.push(',');
-            }
+            buf.push('}');
         }
-        if settings.pretty && !self.members.is_empty() {
-            buf.push_new_line();
-        }
-        buf.push('}');
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[derive(Debug, Clone, PartialEq, Visitable)]
+#[apply(derive_ASTNode)]
 pub enum EnumMember {
     Variant {
         name: String,
@@ -103,16 +97,16 @@ pub enum EnumMember {
 }
 
 impl ASTNode for EnumMember {
-    fn get_position(&self) -> Cow<Span> {
+    fn get_position(&self) -> Span {
         match self {
-            EnumMember::Variant { position, .. } => Cow::Borrowed(position),
+            EnumMember::Variant { position, .. } => *position,
         }
     }
 
     fn from_reader(
-        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, Span>,
+        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
     ) -> Result<Self, crate::ParseError> {
         let (name, start_pos) = token_as_identifier(
             reader.next().ok_or_else(parse_lexing_error)?,
@@ -121,10 +115,10 @@ impl ASTNode for EnumMember {
         match reader.peek() {
             Some(Token(TSXToken::Assign, _)) => {
                 reader.next();
-                let expression = Expression::from_reader(reader, state, settings)?;
+                let expression = Expression::from_reader(reader, state, options)?;
                 Ok(EnumMember::Variant {
                     name,
-                    position: start_pos.union(&expression.get_position()),
+                    position: start_pos.union(expression.get_position()),
                     value: Some(expression),
                 })
             }
@@ -139,15 +133,15 @@ impl ASTNode for EnumMember {
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         match self {
             EnumMember::Variant { name, value, .. } => {
                 buf.push_str(name);
                 if let Some(value) = value {
-                    buf.push_str(if settings.pretty { " = " } else { "=" });
-                    value.to_string_from_buffer(buf, settings, depth);
+                    buf.push_str(if options.pretty { " = " } else { "=" });
+                    value.to_string_from_buffer(buf, options, local);
                 }
             }
         }

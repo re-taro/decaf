@@ -3,7 +3,7 @@ use std::fmt::{self, Display};
 
 use crate::TSXToken;
 use source_map::Span;
-use tokenizer_lib::Token;
+use tokenizer_lib::{sized_tokens::TokenStart, Token};
 
 #[allow(missing_docs)]
 pub enum ParseErrors<'a> {
@@ -31,79 +31,21 @@ pub enum ParseErrors<'a> {
     LexingFailed,
     ExpectedCatchOrFinally,
     InvalidDeclareItem(&'static str),
-}
-
-#[allow(missing_docs)]
-pub enum LexingErrors {
-    SecondDecimalPoint,
-    NumberLiteralCannotHaveDecimalPoint,
-    NumberLiteralBaseSpecifierMustBeSecondCharacter,
-    NumberLiteralBaseSpecifierMustPrecededWithZero,
-    InvalidCharacterInJSXTag(char),
-    UnbalancedJSXClosingTags,
-    ExpectedClosingAngleAtEndOfSelfClosingTag,
-    InvalidCharacterInAttributeKey(char),
-    UnexpectedCharacter(derive_finite_automaton::InvalidCharacter),
-    EmptyAttributeName,
-    ExpectedJSXEndTag,
-    NewLineInStringLiteral,
-    ExpectedEndToMultilineComment,
-    ExpectedEndToStringLiteral,
-    ExpectedEndToRegexLiteral,
-    ExpectedEndToJSXLiteral,
-    ExpectedEndToTemplateLiteral,
-    TwoExponents,
-    TwoUnderscores,
-    TrailingUnderscore,
-}
-
-impl Display for LexingErrors {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LexingErrors::SecondDecimalPoint => {
-                f.write_str("Second decimal point found in number literal")
-            }
-            LexingErrors::NumberLiteralCannotHaveDecimalPoint => {
-                f.write_str("Number literal with specified base cannot have decimal point")
-            }
-            LexingErrors::NumberLiteralBaseSpecifierMustBeSecondCharacter => {
-                f.write_str("Number literal base character must be second character in literal")
-            }
-            LexingErrors::NumberLiteralBaseSpecifierMustPrecededWithZero => {
-                f.write_str("Number literal base character must be proceeded with a zero")
-            }
-            LexingErrors::InvalidCharacterInJSXTag(chr) => {
-                write!(f, "Invalid character {chr:?} in JSX tag")
-            }
-            LexingErrors::ExpectedClosingAngleAtEndOfSelfClosingTag => {
-                f.write_str("Expected closing angle at end of self closing JSX tag")
-            }
-            LexingErrors::InvalidCharacterInAttributeKey(chr) => {
-                write!(f, "Invalid character {:?} in JSX attribute name", chr)
-            }
-            LexingErrors::EmptyAttributeName => f.write_str("Empty JSX attribute name"),
-            LexingErrors::ExpectedJSXEndTag => f.write_str("Expected JSX end tag"),
-            LexingErrors::NewLineInStringLiteral => {
-                f.write_str("String literals cannot contain new lines")
-            }
-            LexingErrors::ExpectedEndToMultilineComment => {
-                f.write_str("Unclosed multiline comment")
-            }
-            LexingErrors::ExpectedEndToStringLiteral => f.write_str("Unclosed string literal"),
-            LexingErrors::ExpectedEndToRegexLiteral => f.write_str("Unclosed regex literal"),
-            LexingErrors::ExpectedEndToJSXLiteral => f.write_str("Unclosed JSX literal"),
-            LexingErrors::ExpectedEndToTemplateLiteral => f.write_str("Unclosed template literal"),
-            LexingErrors::UnexpectedCharacter(err) => Display::fmt(err, f),
-            LexingErrors::UnbalancedJSXClosingTags => f.write_str("Too many closing JSX tags"),
-            LexingErrors::TwoExponents => f.write_str("Two e in number literal"),
-            LexingErrors::TwoUnderscores => {
-                f.write_str("Only one underscore is allowed as numeric separator")
-            }
-            LexingErrors::TrailingUnderscore => {
-                f.write_str("Number literal cannot end with numeric separator")
-            }
-        }
-    }
+    DestructuringRequiresValue,
+    CannotAccessObjectLiteralDirectly,
+    TrailingCommaNotAllowedHere,
+    InvalidNumberLiteral,
+    ReservedIdentifier,
+    AwaitRequiresForOf,
+    CannotUseLeadingParameterHere,
+    ExpectedIdentifier,
+    ExpectedNumberLiteral,
+    NonStandardSyntaxUsedWithoutEnabled,
+    ExpectRule,
+    InvalidRegexFlag,
+    ExpectedDeclaration,
+    CannotHaveRegularMemberAfterSpread,
+    InvalidLHSOfIs,
 }
 
 impl<'a> Display for ParseErrors<'a> {
@@ -115,24 +57,27 @@ impl<'a> Display for ParseErrors<'a> {
                     [] => unreachable!("no expected tokens given"),
                     [a] => f.write_fmt(format_args!("{a:?}")),
                     [a, b] => f.write_fmt(format_args!("{a:?} or {b:?}")),
-                    [head @ .., end] => f.write_fmt(format_args!(
-                        "{} or {:?}",
-                        head.iter()
-                            .map(|chr| format!("{chr:?}"))
-                            .reduce(|mut a, b| {
-                                a.push_str(", ");
-                                a.push_str(&b);
-                                a
+                    [head @ .., end] => {
+                        let start = head
+                            .iter()
+                            .map(|token| format!("{token:?}"))
+                            .reduce(|mut acc, token| {
+                                acc.push_str(", ");
+                                acc.push_str(&token);
+                                acc
                             })
-                            .unwrap(),
-                        end
-                    )),
+                            .unwrap();
+                        f.write_fmt(format_args!("{start} or {end:?}"))
+                    }
                 }?;
                 write!(f, " found {found:?}")
             }
             ParseErrors::UnexpectedSymbol(invalid_character) => Display::fmt(invalid_character, f),
             ParseErrors::ClosingTagDoesNotMatch { expected, found } => {
                 write!(f, "Expected </{expected}> found </{found}>")
+            }
+            ParseErrors::NonStandardSyntaxUsedWithoutEnabled => {
+                write!(f, "Cannot use this syntax without flag enabled")
             }
             ParseErrors::ExpectedStringLiteral { found } => {
                 write!(f, "Expected string literal, found {found:?}")
@@ -161,21 +106,147 @@ impl<'a> Display for ParseErrors<'a> {
             ParseErrors::InvalidDeclareItem(item) => {
                 write!(f, "Declare item '{item}' must be in .d.ts file")
             }
+            ParseErrors::DestructuringRequiresValue => {
+                write!(f, "RHS of destructured declaration requires expression")
+            }
+            ParseErrors::CannotAccessObjectLiteralDirectly => {
+                write!(f, "Cannot get property on object literal directly")
+            }
+            ParseErrors::TrailingCommaNotAllowedHere => {
+                write!(f, "Trailing comma not allowed here")
+            }
+            ParseErrors::InvalidNumberLiteral => {
+                write!(f, "Invalid number literal")
+            }
+            ParseErrors::ReservedIdentifier => {
+                write!(f, "Found reserved identifier")
+            }
+            ParseErrors::AwaitRequiresForOf => {
+                write!(f, "Can only use await on for (.. of ..)")
+            }
+            ParseErrors::CannotUseLeadingParameterHere => {
+                write!(f, "Cannot write this constraint in this kind of function")
+            }
+            ParseErrors::ExpectedIdentifier => {
+                write!(f, "Expected variable identifier")
+            }
+            ParseErrors::ExpectedNumberLiteral => {
+                write!(f, "Expected number literal")
+            }
+            ParseErrors::ExpectRule => {
+                write!(f, "'-' must be followed by a readonly rule")
+            }
+            ParseErrors::InvalidRegexFlag => {
+                write!(
+                    f,
+                    "Regexp flags must be 'd', 'g', 'i', 'm', 's', 'u' or 'y'"
+                )
+            }
+            ParseErrors::ExpectedDeclaration => {
+                write!(f, "Expected identifier after variable declaration keyword")
+            }
+            ParseErrors::CannotHaveRegularMemberAfterSpread => {
+                write!(f, "Cannot have regular member after spread")
+            }
+            ParseErrors::InvalidLHSOfIs => {
+                write!(f, "LHS must be variable reference")
+            }
+        }
+    }
+}
+
+#[allow(missing_docs)]
+#[derive(Debug)]
+pub enum LexingErrors {
+    SecondDecimalPoint,
+    NumberLiteralCannotHaveDecimalPoint,
+    NumberLiteralBaseSpecifierMustPrecededWithZero,
+    InvalidCharacterInJSXTag(char),
+    UnbalancedJSXClosingTags,
+    ExpectedClosingChevronAtEndOfSelfClosingTag,
+    InvalidCharacterInAttributeKey(char),
+    UnexpectedCharacter(derive_finite_automaton::InvalidCharacter),
+    EmptyAttributeName,
+    ExpectedJSXEndTag,
+    NewLineInStringLiteral,
+    ExpectedEndToMultilineComment,
+    ExpectedEndToStringLiteral,
+    UnexpectedEndToNumberLiteral,
+    InvalidNumeralItemBecauseOfLiteralKind,
+    ExpectedEndToRegexLiteral,
+    ExpectedEndToJSXLiteral,
+    ExpectedEndToTemplateLiteral,
+    InvalidExponentUsage,
+    InvalidUnderscore,
+    CannotLoadLargeFile(usize),
+    ExpectedDashInComment,
+    ExpectedOpenChevron,
+}
+
+impl Display for LexingErrors {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LexingErrors::SecondDecimalPoint => {
+                f.write_str("Second decimal point found in number literal")
+            }
+            LexingErrors::NumberLiteralCannotHaveDecimalPoint => {
+                f.write_str("Number literal with specified base cannot have decimal point")
+            }
+            LexingErrors::NumberLiteralBaseSpecifierMustPrecededWithZero => {
+                f.write_str("Number literal base character must be proceeded with a zero")
+            }
+            LexingErrors::InvalidCharacterInJSXTag(chr) => {
+                write!(f, "Invalid character {chr:?} in JSX tag")
+            }
+            LexingErrors::ExpectedClosingChevronAtEndOfSelfClosingTag => {
+                f.write_str("Expected closing angle at end of self closing JSX tag")
+            }
+            LexingErrors::InvalidCharacterInAttributeKey(chr) => {
+                write!(f, "Invalid character {chr:?} in JSX attribute name")
+            }
+            LexingErrors::EmptyAttributeName => f.write_str("Empty JSX attribute name"),
+            LexingErrors::ExpectedJSXEndTag => f.write_str("Expected JSX end tag"),
+            LexingErrors::NewLineInStringLiteral => {
+                f.write_str("String literals cannot contain new lines")
+            }
+            LexingErrors::ExpectedEndToMultilineComment => {
+                f.write_str("Unclosed multiline comment")
+            }
+            LexingErrors::ExpectedEndToStringLiteral => f.write_str("Unclosed string literal"),
+            LexingErrors::UnexpectedEndToNumberLiteral => f.write_str("Unclosed number literal"),
+            LexingErrors::ExpectedEndToRegexLiteral => f.write_str("Unclosed regex literal"),
+            LexingErrors::ExpectedEndToJSXLiteral => f.write_str("Unclosed JSX literal"),
+            LexingErrors::ExpectedEndToTemplateLiteral => f.write_str("Unclosed template literal"),
+            LexingErrors::UnexpectedCharacter(err) => Display::fmt(err, f),
+            LexingErrors::UnbalancedJSXClosingTags => f.write_str("Too many closing JSX tags"),
+            LexingErrors::InvalidExponentUsage => f.write_str("Two e in number literal"),
+            LexingErrors::InvalidUnderscore => f.write_str("Numeric separator in invalid place"),
+            LexingErrors::InvalidNumeralItemBecauseOfLiteralKind => {
+                f.write_str("Invalid item in binary, hex or octal literal")
+            }
+            LexingErrors::CannotLoadLargeFile(size) => {
+                write!(f, "Cannot parse {size:?} byte file (4GB maximum)")
+            }
+            LexingErrors::ExpectedDashInComment => {
+                f.write_str("JSX comments must have two dashes after `<!` start")
+            }
+            LexingErrors::ExpectedOpenChevron => {
+                f.write_str("Unexpected token in HTML. Expected '<'")
+            }
         }
     }
 }
 
 // For TokenReader::expect_next
-impl From<Option<(TSXToken, Token<TSXToken, Span>)>> for ParseError {
-    fn from(opt: Option<(TSXToken, Token<TSXToken, Span>)>) -> Self {
-        if let Some((expected_type, Token(token, invalid_token_position))) = opt {
-            Self::new(
-                ParseErrors::UnexpectedToken {
-                    expected: &[expected_type],
-                    found: token,
-                },
-                invalid_token_position,
-            )
+impl From<Option<(TSXToken, Token<TSXToken, TokenStart>)>> for ParseError {
+    fn from(opt: Option<(TSXToken, Token<TSXToken, TokenStart>)>) -> Self {
+        if let Some((expected_type, token)) = opt {
+            let position = token.get_span();
+            let reason = ParseErrors::UnexpectedToken {
+                expected: &[expected_type],
+                found: token.0,
+            };
+            Self::new(reason, position)
         } else {
             parse_lexing_error()
         }
@@ -184,7 +255,7 @@ impl From<Option<(TSXToken, Token<TSXToken, Span>)>> for ParseError {
 
 // For TokenReader::next which only
 pub(crate) fn parse_lexing_error() -> ParseError {
-    ParseError::new(ParseErrors::LexingFailed, Span::NULL_SPAN)
+    ParseError::new(ParseErrors::LexingFailed, source_map::Nullable::NULL)
 }
 
 pub trait ParserErrorReason: Display {}
@@ -200,11 +271,22 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(reason: impl ParserErrorReason, position: Span) -> Self {
         Self {
             reason: reason.to_string(),
             position,
         }
+    }
+}
+
+impl std::error::Error for ParseError {}
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!(
+            "ParseError: {} @ byte indices {:?}",
+            self.reason, self.position
+        ))
     }
 }
 

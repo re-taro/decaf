@@ -1,7 +1,13 @@
-use std::borrow::Cow;
-
-use crate::{PropertyReference, TSXToken};
+use crate::{
+    ast::{
+        object_literal::{ObjectLiteral, ObjectLiteralMember},
+        FunctionArgument,
+    },
+    derive_ASTNode, ParseErrors, PropertyKey, PropertyReference, SpreadDestructuringField,
+    TSXToken,
+};
 use derive_partial_eq_extras::PartialEqExtras;
+use get_field_by_type::GetFieldByType;
 use iterator_endiate::EndiateIteratorExt;
 use source_map::Span;
 use tokenizer_lib::TokenReader;
@@ -9,16 +15,15 @@ use visitable_derive::Visitable;
 
 use crate::{
     ASTNode, ArrayDestructuringField, Expression, ObjectDestructuringField, ParseError,
-    ParseResult, VariableFieldInSourceCode, WithComment,
+    ParseResult, WithComment,
 };
 
 use super::MultipleExpression;
 
-#[derive(Debug, Clone, PartialEq, Eq, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, Clone, PartialEqExtras, Visitable, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
+#[partial_eq_ignore_types(Span)]
 pub enum VariableOrPropertyAccess {
     Variable(String, Span),
     PropertyAccess {
@@ -35,27 +40,23 @@ pub enum VariableOrPropertyAccess {
 }
 
 impl ASTNode for VariableOrPropertyAccess {
-    fn get_position(&self) -> Cow<Span> {
-        match self {
-            VariableOrPropertyAccess::Variable(_, position)
-            | VariableOrPropertyAccess::PropertyAccess { position, .. }
-            | VariableOrPropertyAccess::Index { position, .. } => Cow::Borrowed(position),
-        }
+    fn get_position(&self) -> Span {
+        *self.get()
     }
 
     fn from_reader(
-        reader: &mut impl TokenReader<TSXToken, Span>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
     ) -> ParseResult<Self> {
-        Expression::from_reader(reader, state, settings)?.try_into()
+        Expression::from_reader(reader, state, options)?.try_into()
     }
 
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         match self {
             VariableOrPropertyAccess::Variable(name, ..) => {
@@ -64,20 +65,36 @@ impl ASTNode for VariableOrPropertyAccess {
             VariableOrPropertyAccess::PropertyAccess {
                 parent, property, ..
             } => {
-                parent.to_string_from_buffer(buf, settings, depth);
+                if let Expression::NumberLiteral(..)
+                | Expression::ObjectLiteral(..)
+                | Expression::ArrowFunction(..) = parent.get_non_parenthesized()
+                {
+                    buf.push('(');
+                    parent.to_string_from_buffer(buf, options, local);
+                    buf.push(')');
+                } else {
+                    parent.to_string_from_buffer(buf, options, local);
+                }
                 buf.push('.');
-                if let PropertyReference::Standard(property) = property {
+                if let PropertyReference::Standard {
+                    property,
+                    is_private,
+                } = property
+                {
+                    if *is_private {
+                        buf.push('#');
+                    }
                     buf.push_str(property);
-                } else if !settings.expect_cursors {
-                    panic!("found cursor");
+                } else if !options.expect_markers {
+                    panic!("found marker");
                 }
             }
             VariableOrPropertyAccess::Index {
                 indexee, indexer, ..
             } => {
-                indexee.to_string_from_buffer(buf, settings, depth);
+                indexee.to_string_from_buffer(buf, options, local);
                 buf.push('[');
-                indexer.to_string_from_buffer(buf, settings, depth);
+                indexer.to_string_from_buffer(buf, options, local);
                 buf.push(']');
             }
         }
@@ -86,12 +103,12 @@ impl ASTNode for VariableOrPropertyAccess {
 
 impl VariableOrPropertyAccess {
     pub(crate) fn from_reader_with_precedence(
-        reader: &mut impl TokenReader<TSXToken, Span>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &crate::ParseOptions,
+        options: &crate::ParseOptions,
         return_precedence: u8,
     ) -> ParseResult<Self> {
-        Expression::from_reader_with_precedence(reader, state, settings, return_precedence)?
+        Expression::from_reader_with_precedence(reader, state, options, return_precedence, None)?
             .try_into()
     }
 }
@@ -126,14 +143,26 @@ impl TryFrom<Expression> for VariableOrPropertyAccess {
                 indexer,
                 position,
                 indexee,
+                is_optional: false,
             } => Ok(Self::Index {
                 indexer,
                 position,
                 indexee,
             }),
+            // Yah weird. Recursion is fine
+            Expression::ParenthesizedExpression(inner, _) => {
+                if let MultipleExpression::Single(expression) = *inner {
+                    TryFrom::try_from(expression)
+                } else {
+                    Err(ParseError::new(
+                        crate::ParseErrors::InvalidLHSAssignment,
+                        inner.get_position(),
+                    ))
+                }
+            }
             expression => Err(ParseError::new(
                 crate::ParseErrors::InvalidLHSAssignment,
-                expression.get_position().into_owned(),
+                expression.get_position(),
             )),
         }
     }
@@ -153,6 +182,7 @@ impl From<VariableOrPropertyAccess> for Expression {
                 indexee,
                 indexer,
                 position,
+                is_optional: false,
             },
             VariableOrPropertyAccess::PropertyAccess {
                 parent,
@@ -169,6 +199,7 @@ impl From<VariableOrPropertyAccess> for Expression {
 }
 
 impl VariableOrPropertyAccess {
+    #[must_use]
     pub fn get_parent(&self) -> Option<&Expression> {
         match self {
             VariableOrPropertyAccess::Variable(..) => None,
@@ -190,71 +221,254 @@ impl VariableOrPropertyAccess {
     }
 }
 
-/// TODO should be different from VariableFieldInSourceCode here
 /// TODO visitable is current skipped...
-/// TODO cursor
+///
+/// Includes [Destructuring assignment](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment)
+#[apply(derive_ASTNode)]
 #[derive(PartialEqExtras, Debug, Clone, Visitable, derive_enum_from_into::EnumFrom)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
 #[partial_eq_ignore_types(Span)]
 pub enum LHSOfAssignment {
-    ObjectDestructuring(
-        #[visit_skip_field] Vec<WithComment<ObjectDestructuringField<VariableFieldInSourceCode>>>,
-        Span,
-    ),
-    ArrayDestructuring(
-        #[visit_skip_field] Vec<ArrayDestructuringField<VariableFieldInSourceCode>>,
-        Span,
-    ),
     VariableOrPropertyAccess(VariableOrPropertyAccess),
+    ArrayDestructuring {
+        #[visit_skip_field]
+        members: Vec<WithComment<ArrayDestructuringField<LHSOfAssignment>>>,
+        spread: Option<SpreadDestructuringField<LHSOfAssignment>>,
+        position: Span,
+    },
+    ObjectDestructuring {
+        #[visit_skip_field]
+        members: Vec<WithComment<ObjectDestructuringField<LHSOfAssignment>>>,
+        spread: Option<SpreadDestructuringField<LHSOfAssignment>>,
+        position: Span,
+    },
 }
 
-impl LHSOfAssignment {
-    pub fn get_position(&self) -> Cow<Span> {
+impl ASTNode for LHSOfAssignment {
+    fn get_position(&self) -> Span {
         match self {
-            LHSOfAssignment::ObjectDestructuring(_, pos)
-            | LHSOfAssignment::ArrayDestructuring(_, pos) => Cow::Borrowed(pos),
+            LHSOfAssignment::ObjectDestructuring { position, .. }
+            | LHSOfAssignment::ArrayDestructuring { position, .. } => *position,
             LHSOfAssignment::VariableOrPropertyAccess(var_prop_access) => {
                 var_prop_access.get_position()
             }
         }
     }
 
-    pub(crate) fn to_string_from_buffer<T: source_map::ToString>(
+    fn from_reader(
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
+        state: &mut crate::ParsingState,
+        options: &crate::ParseOptions,
+    ) -> ParseResult<Self> {
+        Expression::from_reader(reader, state, options).and_then(TryInto::try_into)
+    }
+
+    fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         match self {
-            LHSOfAssignment::ObjectDestructuring(members, _) => {
+            LHSOfAssignment::ObjectDestructuring {
+                members,
+                spread,
+                position: _,
+            } => {
                 buf.push('{');
-                settings.add_gap(buf);
+                options.push_gap_optionally(buf);
                 for (at_end, member) in members.iter().endiate() {
-                    member.to_string_from_buffer(buf, settings, depth);
+                    member.to_string_from_buffer(buf, options, local);
                     if !at_end {
                         buf.push(',');
-                        settings.add_gap(buf);
+                        options.push_gap_optionally(buf);
                     }
                 }
-                settings.add_gap(buf);
+                if let Some(ref spread) = spread {
+                    if !members.is_empty() {
+                        buf.push(',');
+                        options.push_gap_optionally(buf);
+                    }
+                    buf.push_str("...");
+                    spread.0.to_string_from_buffer(buf, options, local);
+                }
+                options.push_gap_optionally(buf);
                 buf.push('}');
             }
-            LHSOfAssignment::ArrayDestructuring(members, _) => {
+            LHSOfAssignment::ArrayDestructuring {
+                members,
+                spread,
+                position: _,
+            } => {
                 buf.push('[');
                 for (at_end, member) in members.iter().endiate() {
-                    member.to_string_from_buffer(buf, settings, depth);
+                    member.to_string_from_buffer(buf, options, local);
                     if !at_end {
                         buf.push(',');
+                        options.push_gap_optionally(buf);
                     }
+                }
+                if let Some(ref spread) = spread {
+                    if !members.is_empty() {
+                        buf.push(',');
+                        options.push_gap_optionally(buf);
+                    }
+                    buf.push_str("...");
+                    spread.0.to_string_from_buffer(buf, options, local);
                 }
                 buf.push(']');
             }
             LHSOfAssignment::VariableOrPropertyAccess(variable_or_property_access) => {
-                variable_or_property_access.to_string_from_buffer(buf, settings, depth)
+                variable_or_property_access.to_string_from_buffer(buf, options, local);
             }
+        }
+    }
+}
+
+impl TryFrom<Expression> for LHSOfAssignment {
+    type Error = ParseError;
+
+    fn try_from(value: Expression) -> Result<Self, Self::Error> {
+        match value {
+            Expression::ArrayLiteral(members, position) => {
+                let mut new_members = Vec::with_capacity(members.len());
+                let mut iter = members.into_iter();
+                for member in iter.by_ref() {
+                    let new_member = match member.0 {
+                        Some(FunctionArgument::Comment {
+                            content,
+                            is_multiline: _,
+                            position,
+                        }) => WithComment::PrefixComment(
+                            content,
+                            ArrayDestructuringField::None,
+                            position,
+                        ),
+                        Some(FunctionArgument::Spread(expression, span)) => {
+                            return if let Some(next) = iter.next() {
+                                Err(ParseError::new(
+                                    ParseErrors::CannotHaveRegularMemberAfterSpread,
+                                    next.get_position(),
+                                ))
+                            } else {
+                                let inner: LHSOfAssignment = expression.try_into()?;
+                                Ok(Self::ArrayDestructuring {
+                                    members: new_members,
+                                    spread: Some(SpreadDestructuringField(Box::new(inner), span)),
+                                    position,
+                                })
+                            }
+                        }
+                        Some(FunctionArgument::Standard(expression)) => {
+                            WithComment::None(match expression {
+                                Expression::Assignment {
+                                    lhs,
+                                    rhs,
+                                    position: _,
+                                } => ArrayDestructuringField::Name(lhs, (), Some(rhs)),
+                                expression => {
+                                    ArrayDestructuringField::Name(expression.try_into()?, (), None)
+                                }
+                            })
+                        }
+                        None => WithComment::None(ArrayDestructuringField::None),
+                    };
+                    new_members.push(new_member);
+                }
+                Ok(Self::ArrayDestructuring {
+                    members: new_members,
+                    spread: None,
+                    position,
+                })
+            }
+            Expression::ObjectLiteral(ObjectLiteral { members, position }) => {
+                let mut new_members = Vec::with_capacity(members.len());
+                let mut iter = members.into_iter();
+                for member in iter.by_ref() {
+                    let new_member: ObjectDestructuringField<LHSOfAssignment> = match member {
+                        ObjectLiteralMember::Spread(expression, span) => {
+                            return if let Some(next) = iter.next() {
+                                Err(ParseError::new(
+                                    ParseErrors::CannotHaveRegularMemberAfterSpread,
+                                    next.get_position(),
+                                ))
+                            } else {
+                                let inner: LHSOfAssignment = expression.try_into()?;
+                                Ok(Self::ObjectDestructuring {
+                                    members: new_members,
+                                    spread: Some(SpreadDestructuringField(Box::new(inner), span)),
+                                    position,
+                                })
+                            }
+                        }
+                        ObjectLiteralMember::Shorthand(name, pos) => {
+                            ObjectDestructuringField::Name(
+                                crate::VariableIdentifier::Standard(name, pos),
+                                (),
+                                None,
+                                pos,
+                            )
+                        }
+                        ObjectLiteralMember::Property {
+                            assignment,
+                            key,
+                            position,
+                            value,
+                        } => {
+                            if assignment {
+                                if let PropertyKey::Identifier(name, pos, _) = key.get_ast() {
+                                    ObjectDestructuringField::Name(
+                                        crate::VariableIdentifier::Standard(name, pos),
+                                        (),
+                                        Some(Box::new(value)),
+                                        pos,
+                                    )
+                                } else {
+                                    return Err(ParseError::new(
+                                        crate::ParseErrors::InvalidLHSAssignment,
+                                        position,
+                                    ));
+                                }
+                            } else {
+                                let (name, default_value) = if let Expression::Assignment {
+                                    lhs,
+                                    rhs,
+                                    position: _,
+                                } = value
+                                {
+                                    (lhs, Some(rhs))
+                                } else {
+                                    (value.try_into()?, None)
+                                };
+
+                                ObjectDestructuringField::Map {
+                                    from: key.get_ast(),
+                                    annotation: (),
+                                    name: WithComment::None(name),
+                                    default_value,
+                                    position,
+                                }
+                            }
+                        }
+                        ObjectLiteralMember::Method(_) => {
+                            return Err(ParseError::new(
+                                crate::ParseErrors::InvalidLHSAssignment,
+                                position,
+                            ))
+                        }
+                        ObjectLiteralMember::Comment(..) => {
+                            continue;
+                        }
+                    };
+                    new_members.push(WithComment::None(new_member));
+                }
+                Ok(Self::ObjectDestructuring {
+                    members: new_members,
+                    spread: None,
+                    position,
+                })
+            }
+            expression => VariableOrPropertyAccess::try_from(expression)
+                .map(LHSOfAssignment::VariableOrPropertyAccess),
         }
     }
 }

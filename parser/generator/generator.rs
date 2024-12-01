@@ -2,62 +2,39 @@ use proc_macro::{token_stream, Delimiter, Spacing, TokenStream, TokenTree};
 use proc_macro2::Span;
 use quote::{format_ident, quote};
 
-/// Used for generating parser::ASTNodes using proc macros
+/// Used for generating decaf_parser::ASTNodes using proc macros
 ///
 /// Turns token stream into string.
-/// - Finds expressions and registers cursor locations
+/// - Finds expressions and registers marker locations
 /// - Parses structure from string and turns it into Rust tokens
 #[proc_macro]
 pub fn expr(item: TokenStream) -> TokenStream {
-    token_stream_to_ast_node::<parser::Expression>(item)
+    token_stream_to_ast_node::<decaf_parser::Expression>(item)
 }
 
 #[proc_macro]
 pub fn stmt(item: TokenStream) -> TokenStream {
-    token_stream_to_ast_node::<parser::StatementOrDeclaration>(item)
+    token_stream_to_ast_node::<decaf_parser::StatementOrDeclaration>(item)
 }
 
-struct InterpolationPoint {
-    position: usize,
-    expr_name: String,
-}
-
-fn token_stream_to_ast_node<T: parser::ASTNode + self_rust_tokenize::SelfRustTokenize>(
+fn token_stream_to_ast_node<T: decaf_parser::ASTNode + self_rust_tokenize::SelfRustTokenize>(
     item: TokenStream,
 ) -> TokenStream {
-    let mut cursor_locations = Vec::new();
-    let mut string = String::new();
-    parse_token_stream(item.into_iter(), &mut string, &mut cursor_locations);
+    let mut string_to_parse = String::new();
+    let mut marker_items = Vec::new();
+    parse_token_stream(item.into_iter(), &mut string_to_parse, &mut marker_items);
 
-    let cursors = cursor_locations
-        .iter()
-        .enumerate()
-        .map(
-            |(
-                idx,
-                InterpolationPoint {
-                    position,
-                    expr_name: _,
-                },
-            )| {
-                (
-                    *position,
-                    parser::CursorId(idx.try_into().unwrap(), std::marker::PhantomData::default()),
-                )
-            },
-        )
-        .collect();
-
-    let parse_result = T::from_string(
-        string,
-        parser::ParseOptions::default(),
-        parser::SourceId::NULL,
-        None,
-        cursors,
-    );
+    // TODO can you get new lines in macro?
+    let line_starts = decaf_parser::source_map::LineStarts::new("");
+    let options = decaf_parser::ParseOptions {
+        interpolation_points: true,
+        ..Default::default()
+    };
+    let parse_result =
+        decaf_parser::lex_and_parse_script::<T>(line_starts, options, &string_to_parse, None);
 
     let node = match parse_result {
-        Ok(node) => node,
+        Ok((node, _state)) => node,
         Err(err) => {
             let reason = err.reason;
             return quote!(compile_error!(#reason)).into();
@@ -66,30 +43,24 @@ fn token_stream_to_ast_node<T: parser::ASTNode + self_rust_tokenize::SelfRustTok
 
     let node_as_tokens = self_rust_tokenize::SelfRustTokenize::to_tokens(&node);
 
-    let interpolation_tokens = cursor_locations.iter().enumerate().map(
-        |(
-            idx,
-            InterpolationPoint {
-                position: _,
-                expr_name,
-            },
-        )| {
-            let ident = format_ident!("_cursor_{idx}");
-            let expr_ident = proc_macro2::Ident::new(expr_name, Span::call_site());
-            quote!(let #ident = #expr_ident)
-        },
-    );
+    let interpolation_tokens = marker_items.iter().enumerate().map(|(idx, name)| {
+        let ident = format_ident!("_marker_{idx}");
+        let expr_ident = proc_macro2::Ident::new(name, Span::call_site());
+        quote!(let #ident = #expr_ident)
+    });
 
     let tokens = quote! {
         {
-            use parser::{ast::*, Span, SourceId};
+            use decaf_parser::ast::*;
+            use decaf_parser::{generator_helpers::IntoAST, source_map};
+
             #(#interpolation_tokens;)*
-            const CURRENT_SOURCE_ID: SourceId = SourceId::NULL;
+            const CURRENT_SOURCE_ID: source_map::SourceId = source_map::Nullable::NULL;
             #node_as_tokens
         }
     };
 
-    // eprintln!("{tokens}");
+    // eprintln!("output: {tokens}");
 
     tokens.into()
 }
@@ -97,7 +68,7 @@ fn token_stream_to_ast_node<T: parser::ASTNode + self_rust_tokenize::SelfRustTok
 fn parse_token_stream(
     mut token_iter: token_stream::IntoIter,
     string: &mut String,
-    cursor_locations: &mut Vec<InterpolationPoint>,
+    marker_items: &mut Vec<String>,
 ) {
     let mut last_was_ident = false;
     while let Some(token_tree) = token_iter.next() {
@@ -113,7 +84,7 @@ fn parse_token_stream(
                     Delimiter::None => ("", ""),
                 };
                 string.push_str(start);
-                parse_token_stream(group.stream().into_iter(), string, cursor_locations);
+                parse_token_stream(group.stream().into_iter(), string, marker_items);
                 string.push_str(end);
             }
             TokenTree::Ident(ident) => {
@@ -127,13 +98,14 @@ fn parse_token_stream(
                 if chr == '#' {
                     if let Some(TokenTree::Ident(ident)) = token_iter.next() {
                         let expr_name = ident.to_string();
-                        cursor_locations.push(InterpolationPoint {
-                            position: string.len(),
-                            expr_name,
-                        });
+                        marker_items.push(expr_name);
                     } else {
                         panic!("Expected ident")
                     }
+                    // spaces break up the node
+                    string.push(' ');
+                    string.push_str(decaf_parser::marker::MARKER);
+                    string.push(' ');
                 } else {
                     let spacing = matches!(punctuation.spacing(), Spacing::Alone)
                         && !matches!(chr, '<' | '>' | '/');
