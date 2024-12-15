@@ -1,6 +1,5 @@
 {
 	"name": "decaf",
-	"main": "./dist/index.mjs",
 	"module": "./dist/index.mjs",
 	"type": "module",
 	"exports": {
@@ -48,7 +47,6 @@
 		],
 		"declaration": true,
 		"rollup": {
-			"commonjs": true,
 			"esbuild": {
 				"target": "esnext"
 			}
