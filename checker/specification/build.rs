@@ -165,10 +165,10 @@ fn markdown_lines_append_test_to_rust(
 
         writeln!(
             out,
-            "#[test] fn {test_title}() {{ 
+            "#[test] fn {test_title}() {{
                 super::check_expected_diagnostics(
-					\"{heading}\", {heading_idx}, 
-					&[{code_as_list}], &[{expected_diagnostics}], 
+					\"{heading}\", {heading_idx},
+					&[{code_as_list}], &[{expected_diagnostics}],
 					{options}
 				)
             }}",

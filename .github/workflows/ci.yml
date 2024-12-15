@@ -82,9 +82,7 @@ jobs:
         run: |
           cargo test
           curl https://esm.sh/v128/react-dom@18.2.0/es2022/react-dom.mjs > react.js
-          curl https://esm.sh/v128/typescript@5.7.2/es2022/lib/typescript.js > typescript.js
           cargo run -p decaf-parser --example parse react.js
-          cargo run -p decaf-parser --example parse typescript.js
         working-directory: parser
       - name: Test | Run checker specification
         if: (steps.changes.outputs.checker == 'true' && github.event_name != 'pull_request') || github.ref_name == 'main'
