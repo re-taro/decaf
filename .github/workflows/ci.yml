@@ -1,24 +1,44 @@
 name: CI
 
 on:
-  push:
   pull_request:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTFLAGS: "-D warnings"
-  RUSTUP_MAX_RETRIES: 10
+  CACHE_PATHS: |
+    ~/.cargo/bin/
+    ~/.cargo/registry/index/
+    ~/.cargo/registry/cache/
+    ~/.cargo/git/db/
+    target/
+    checker/fuzz/target
+    parser/fuzz/target
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.ref_name != 'main' }}
 
 jobs:
-  rustfmt:
-    name: Rustfmt [Formatter]
+  validity:
+    name: Validity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@1.80.0
+      - name: Setup | Cache
+        uses: actions/cache@v4.2.0
+        with:
+          path: ${{ env.CACHE_PATHS }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Check | Source is valid
+        run: cargo check --workspace
+      - name: Check | Binary
+        run: cargo check --bin decaf
+  formating:
+    name: Formating
     runs-on: ubuntu-latest
     steps:
       - name: Setup | Checkout
@@ -27,92 +47,27 @@ jobs:
         uses: dtolnay/rust-toolchain@1.80.0
         with:
           components: rustfmt
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build | Format
-        run: cargo fmt --all -- --check
-  taplo:
-    name: Taplo [Linter]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build | Lint
+      - name: Check | Rust formatting with rustfmt
+        run: cargo fmt --all --check
+      - name: Check | TOML formatting with taplo
         uses: docker://docker.io/tamasfe/taplo:0.9.3
         with:
           args: fmt --check **/*/Cargo.toml
-  clippy:
-    name: Clippy [Linter]
+  tests:
+    name: Tests
+    needs: validity
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
         uses: dtolnay/rust-toolchain@1.80.0
+      - name: Setup | Cache
+        uses: actions/cache@v4.2.0
         with:
-          components: clippy
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build | Lint
-        uses: giraffate/clippy-action@94e9bd8deab2618756ec5380f12eb35bcb0a88ca
-        with:
-          reporter: github-pr-review
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-  cargo_check:
-    name: Compile
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build | Check
-        run: cargo check --workspace --locked
-  cargo_check_no_features:
-    name: Compile with no features enabled
-    needs: cargo_check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build | Check
-        run: cargo check --workspace --locked --no-default-features
-  cargo_check_all_features:
-    name: Compile with all features enabled
-    needs: cargo_check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build | Check
-        run: cargo check --workspace --locked --all-features
-  test:
-    name: Test
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Setup | Checkout
-        uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
+          path: ${{ env.CACHE_PATHS }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Setup | Filter changes
         uses: dorny/paths-filter@v3.0.2
         id: changes
@@ -121,20 +76,126 @@ jobs:
             parser:
               - 'parser/**'
             checker:
-            - 'checker/**'
-      - name: Build | Parser test
-        if: steps.changes.outputs.parser == 'true'
-        run: cargo test
+              - 'checker/**'
+      - name: Test | Run parser tests
+        if: steps.changes.outputs.parser == 'true' || github.ref_name == 'main'
+        run: |
+          cargo test
+          curl https://esm.sh/v128/react-dom@18.2.0/es2022/react-dom.mjs > react.js
+          curl https://esm.sh/v128/typescript@5.7.2/es2022/lib/typescript.js > typescript.js
+          cargo run -p decaf-parser --example parse react.js
+          cargo run -p decaf-parser --example parse typescript.js
         working-directory: parser
-      - name: Build | Test checker specification
-        if: steps.changes.outputs.checker == 'true'
+      - name: Test | Run checker specification
+        if: (steps.changes.outputs.checker == 'true' && github.event_name != 'pull_request') || github.ref_name == 'main'
+        run: cargo test -p decaf-checker-specification
+      - name: Run checker specification (w/ staging)
+        if: steps.changes.outputs.checker == 'true' && github.event_name == 'pull_request'
+        run: cargo test -F staging -p decaf-checker-specification
+        env:
+          DECAF_DEBUG: 1
+      - name: Test | Run checker specification (just to implement)
+        continue-on-error: true
+        if: steps.changes.outputs.checker == 'true' && github.event_name == 'pull_request'
+        run: |
+          # Aim of this test is to catch anything that may have been fixed in this next commit or any bad regressions (stack overflows)
+          cargo test --no-default-features -F to_implement -p decaf-checker-specification
+        env:
+          DECAF_DEBUG: 1
+      - name: Test | Run checker tests
+        if: steps.changes.outputs.checker == 'true' || github.ref_name == 'main'
+        run: |
+          cargo test -F decaf-parser -p decaf-checker
+      - name: Test | Run CLI and base tests
         run: cargo test
-        working-directory: checker/specification
-      - name: Build | Basic test
-        run: cargo test
-  fuzzing:
-    name: Fuzzing
+  extras:
+    name: Extras
     runs-on: ubuntu-latest
+    needs: validity
+    timeout-minutes: 10
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@1.80.0
+      - name: Setup | Cache
+        uses: actions/cache@v4.2.0
+        with:
+          path: ${{ env.CACHE_PATHS }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup | Filter changes
+        uses: dorny/paths-filter@v3.0.2
+        id: changes
+        with:
+          filters: |
+            src:
+              - 'src/**'
+            parser:
+              - 'parser/**'
+            checker:
+              - 'checker/**'
+            js-cli-and-library:
+              - 'js-cli-and-library/**'
+      - name: Setup | Deno
+        uses: denoland/setup-deno@v2.0.0
+        if: steps.changes.outputs['js-cli-and-library'] == 'true' || github.ref_name == 'main'
+        with:
+          deno-version: v2.x
+      - name: Setup | Node.js
+        uses: actions/setup-node@v4.1.0
+        if: steps.changes.outputs['js-cli-and-library'] == 'true' || github.ref_name == 'main'
+        with:
+          node-version: 23
+      - name: Setup | pnpm
+        if: steps.changes.outputs['js-cli-and-library'] == 'true' || github.ref_name == 'main'
+        run: corepack enable
+      - name: Check | Parser without extras
+        if: steps.changes.outputs.parser == 'true'
+        # TODO want `continue-on-error: true` but doesn't report error
+        run:
+          cargo check -p decaf-parser --no-default-features
+      - name: Check | Parser generator
+        if: steps.changes.outputs.parser == 'true'
+        # TODO want `continue-on-error: true` but doesn't report error
+        run:
+          cargo test -p decaf-ast-generator
+      - name: Check | Checker without default features
+        if: steps.changes.outputs.checker == 'true'
+        # TODO want `continue-on-error: true` but doesn't report error
+        run:
+          cargo check -p decaf-checker --no-default-features
+      - name: Test | Build and test WASM
+        if: steps.changes.outputs['js-cli-and-library'] == 'true' || github.ref_name == 'main'
+        timeout-minutes: 5
+        run: |
+          # TODO `cargo check --target wasm32-unknown-unknown --lib` might be good enough
+
+          rustup target add wasm32-unknown-unknown
+          pnpm i --frozen-lockfile
+          pnpm build
+
+          node ./dist/cli.cjs info
+          deno run -A ./dist/cli.mjs info
+
+          pnpm run-tests
+
+          pnpm dlx typescript tsc --strict --pretty ./build/decaf_lib.d.ts
+          echo "debug checked with TSC"
+          cargo run -p decaf-parser --example parse ./build/decaf_lib.d.ts --type-definition-module
+
+          # TODO temp as the types generated can be a bit unpredicatible
+          if ${{ contains(fromJSON('["main"]'), github.ref_name ) }}; then
+            npm run build-release
+            pnpm dlx typescript tsc --strict --pretty ./build/decaf_lib.d.ts
+          fi
+        working-directory: js-cli-and-library
+        shell: bash
+  fuzzing_parser:
+    name: Fuzzing [Parser]
+    if: ${{ github.ref == 'main' || !github.event.pull_request.draft }}
+    needs: validity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true
     strategy:
       matrix:
@@ -143,7 +204,12 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@1.80.0
+      - name: Setup | Cache
+        uses: actions/cache@v4.2.0
+        with:
+          path: ${{ env.CACHE_PATHS }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Setup | Filter changes
         uses: dorny/paths-filter@v3.0.2
         id: changes
@@ -151,52 +217,99 @@ jobs:
           filters: |
             parser:
               - 'parser/**'
-      - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Setup | cargo-fuzz
-        if: steps.changes.outputs.parser == 'true'
-        run: cargo install cargo-fuzz
-      - name: Build | Run fuzzing
+      - name: Setup | Install latest nightly and set it as default
         if: steps.changes.outputs.parser == 'true'
         run: |
-          cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -max_total_time=120 -use_value_profile=1
+          rustup install nightly
+          rustup default nightly
+      # https://github.com/rust-fuzz/cargo-fuzz/issues/355
+      - name: Setup | Install cargo-fuzz
+        if: steps.changes.outputs.parser == 'true'
+        run: cargo install --git https://github.com/rust-fuzz/cargo-fuzz.git
+      - name: Test | Run fuzzing
+        env:
+          SHORT_CIRCUIT: true
+        if: steps.changes.outputs.parser == 'true'
+        run: |
+          if ${{ env.SHORT_CIRCUIT }}; then
+            CARGO_TARGET_DIR=../../target cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -use_value_profile=1 -max_total_time=120
+          else
+            CARGO_TARGET_DIR=../../target cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -use_value_profile=1 -max_total_time=300 -fork=1 -ignore_crashes=1
+
+            if test -d fuzz/artifacts; then
+              find fuzz/artifacts -type f -print -exec xxd {} \; -exec cargo fuzz fmt -s none module_roundtrip_structured {} \;; false;
+            fi
+          fi
         working-directory: parser/fuzz
-  wasm-build:
+  fuzzing_checker:
+    name: Fuzzing [Checker]
+    if: ${{ github.ref == 'main' || !github.event.pull_request.draft }}
+    needs: validity
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    strategy:
+      matrix:
+        fuzz-target: [check_project_naive]
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@nightly
-      - name: Setup | Node.js
-        uses: re-taro/actions/setup-node@v3.6.0
-        with:
-          node-version: latest
-      - name: Setup | Deno
-        uses: denoland/setup-deno@v1.3.0
-        with:
-          deno-version: v1.x
+        uses: dtolnay/rust-toolchain@1.80.0
       - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Setup | wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli
-      - name: Build | wasm32-unknown-unknown
+        uses: actions/cache@v4.2.0
+        with:
+          path: ${{ env.CACHE_PATHS }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup | Filter changes
+        uses: dorny/paths-filter@v3.0.2
+        id: changes
+        with:
+          filters: |
+            checker:
+              - 'checker/**'
+      - name: Setup | Install latest nightly and set it as default
+        if: steps.changes.outputs.checker == 'true'
         run: |
-          rustup target add wasm32-unknown-unknown
-          pnpm i --frozen-lockfile
-          pnpm run build
-        working-directory: js-cli-and-library
-        shell: bash
-      - name: Build | Test modules
+          rustup install nightly
+          rustup default nightly
+      - name: Setup | Install cargo-fuzz
+        if: steps.changes.outputs.checker == 'true'
+        run: cargo install --git https://github.com/rust-fuzz/cargo-fuzz.git
+      - name: Test | Run fuzzing
+        env:
+          SHORT_CIRCUIT: true
+        if: steps.changes.outputs.checker == 'true'
         run: |
-          node test.js
-          deno run -A test.js
-          node test.cjs
-        working-directory: js-cli-and-library
-        shell: bash
-      - name: Build | Check CLI works
-        run: |
-          node ./dist/cli.cjs info
-          deno run -A ./dist/cli.mjs info
-        working-directory: js-cli-and-library
-        shell: bash
+          if ${{ env.SHORT_CIRCUIT }}; then
+            cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -use_value_profile=1 -max_total_time=120
+          else
+            cargo fuzz run -s none ${{ matrix.fuzz-target }} -- -timeout=10 -use_value_profile=1 -max_total_time=300 -fork=1 -ignore_crashes=1
+
+            # if test -d fuzz/artifacts; then
+            #   find fuzz/artifacts -type f -print -exec xxd {} \; -exec cargo fuzz fmt -s none module_roundtrip_structured {} \;; false;
+            # fi
+          fi
+
+          ls .
+          ls target
+        working-directory: checker/fuzz
+  clippy:
+    name: Clippy
+    needs: validity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup | Rust
+        uses: dtolnay/rust-toolchain@1.80.0
+        with:
+          components: clippy
+      - name: Setup | Cache
+        uses: actions/cache@v4.2.0
+        with:
+          path: ${{ env.CACHE_PATHS }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Lint | Lint code with clippy
+        run: cargo clippy

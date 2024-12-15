@@ -1,7 +1,5 @@
 ## Specification
 
-See [./README.md](README.md) for details about how `specification.md` works
-
 ### Variables
 
 #### Variable declarations
@@ -1455,6 +1453,8 @@ myTag`Count is ${"not a number!!"}`;
 
 #### Generics on dependent type
 
+> Weird annotation here is to work around the fact that the function is not called
+
 ```ts
 function createNew(cb: { f<T>(t: T): { a: T }}["f"]) {
 	return cb(4)
@@ -1609,6 +1609,8 @@ let x: number = 5;
 ```
 
 - Variable 'x' used before declaration
+
+> Not shown in the example but thanks for adding the position of the error
 
 #### TDZ errors through nested getter
 
@@ -2380,6 +2382,8 @@ x.push("hi");
 - Argument of type \"hi\" is not assignable to parameter of type number
 
 #### Mutation
+
+> This is part of assignment mismatch
 
 ```ts
 function fakeRead(a: Array<string | number>) {

@@ -992,7 +992,7 @@ new RegExp("<string>x").group.string
 
 ### Properties
 
-#### Issue
+#### Issue with `in`
 
 ```ts
 let d = {};

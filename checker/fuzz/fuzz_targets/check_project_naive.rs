@@ -6,28 +6,31 @@ use std::str;
 
 /// check_project_naive throws random strings into the decaf checker, validating that none of them make the checker panic.
 fn do_fuzz(data: &str) -> Corpus {
-	let input = data.trim_start();
+    let input = data.trim_start();
 
-	let definition_file = decaf_checker::INTERNAL_DEFINITION_FILE_PATH.into();
-	let type_definition_files = vec![definition_file];
+    let definition_file = decaf_checker::INTERNAL_DEFINITION_FILE_PATH.into();
+    let type_definition_files = vec![definition_file];
 
-	// `lsp_mode` <=> partial syntax
-	let options = TypeCheckOptions { lsp_mode: true, ..Default::default() };
+    // `lsp_mode` <=> partial syntax
+    let options = TypeCheckOptions {
+        lsp_mode: true,
+        ..Default::default()
+    };
 
-	let root = "index.ts";
+    let root = "index.ts";
 
-	let _result = check_project::<_, synthesis::DecafParser>(
-		vec![root.into()],
-		type_definition_files,
-		&|_path: &std::path::Path| Some(input.to_owned()),
-		options,
-		(),
-		None,
-	);
+    let _result = check_project::<_, synthesis::DecafParser>(
+        vec![root.into()],
+        type_definition_files,
+        &|_path: &std::path::Path| Some(input.to_owned()),
+        options,
+        (),
+        None,
+    );
 
-	Corpus::Keep
+    Corpus::Keep
 }
 
 fuzz_target!(|data: &str| {
-	do_fuzz(data);
+    do_fuzz(data);
 });

@@ -1,42 +1,41 @@
 name: Performance and size
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
-    branches:
-      - main
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTFLAGS: "-D warnings"
-  RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  hyperfine:
+  run-benchmarks:
     runs-on: ubuntu-latest
+
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
+      - name: Setup | Set up Rust
         uses: dtolnay/rust-toolchain@1.80.0
       - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
+        uses: actions/cache@v4.2.0
         with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Setup | Install hyperfine
-        run: cargo install hyperfine
+        uses: brndnmtthws/rust-action-cargo-binstall@v1.1.0
+        with:
+          packages: hyperfine
       - name: Setup | Install valgrind
         run: sudo apt-get install valgrind
-      - name: Build decaf
+      - name: Setup | Build decaf
         run: cargo build --release
         env:
           CARGO_PROFILE_RELEASE_DEBUG: true
-      - name: Run | Set compilers
+      - name: Profile | Set compilers
         id: compilers
         shell: bash
         run: |
@@ -47,10 +46,10 @@ jobs:
             echo "::notice::Running singularly"
             echo "BINARIES=./target/release/decaf" >> "$GITHUB_OUTPUT"
           fi
-      - name: Run | checker performance
+      - name: Profile | Run checker performance
         shell: bash
         run: |
-          # Generate a file which contains everything that Decaf currently implements
+          # Generate a file which contains everything that decaf currently implements
           cargo run -p decaf-parser \
            --example code_blocks_to_script ./checker/specification/specification.md \
            --comment-headers \
@@ -117,7 +116,7 @@ jobs:
             \`\`\`
             </details>" >> $GITHUB_STEP_SUMMARY
           fi
-      - name: Run | checker performance w/staging
+      - name: Profile | Run checker performance w/staging
         shell: bash
         if: github.ref_name != 'main'
         run: |
@@ -130,7 +129,7 @@ jobs:
 
           hyperfine -i -L compiler ${{ steps.compilers.outputs.BINARIES }} '{compiler} check all.tsx'
           echo "::endgroup::"
-      - name: Run | checker performance on large file
+      - name: Profile | Run checker performance on large file
         shell: bash
         run: |
           echo "::group::Running large"
@@ -146,7 +145,7 @@ jobs:
 
           hyperfine -i -L compiler ${{ steps.compilers.outputs.BINARIES }} '{compiler} check large.tsx'
           echo "::endgroup::"
-      - name: Run | Valgrind and callgrind
+      - name: Profile | Valgrind and callgrind
         shell: bash
         continue-on-error: true
         run: |
@@ -169,8 +168,7 @@ jobs:
 
             echo "::endgroup::"
           done
-
-      - name: Run | parsing & stringing (minfied) benchmarks
+      - name: Profile | Run parsing & stringing (minfied) benchmarks
         shell: bash
         continue-on-error: true
         run: |
