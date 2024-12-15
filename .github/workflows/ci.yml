@@ -27,7 +27,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
         uses: actions/cache@v4.2.0
         with:
@@ -44,7 +44,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: Check | Rust formatting with rustfmt
@@ -62,7 +62,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
         uses: actions/cache@v4.2.0
         with:
@@ -115,7 +115,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
         uses: actions/cache@v4.2.0
         with:
@@ -177,14 +177,14 @@ jobs:
 
           pnpm run-tests
 
-          pnpm dlx typescript tsc --strict --pretty ./build/decaf_lib.d.ts
+          pnpm --package=typescript dlx tsc --strict --pretty ./build/decaf_lib.d.ts
           echo "debug checked with TSC"
           cargo run -p decaf-parser --example parse ./build/decaf_lib.d.ts --type-definition-module
 
           # TODO temp as the types generated can be a bit unpredicatible
           if ${{ contains(fromJSON('["main"]'), github.ref_name ) }}; then
             npm run build-release
-            pnpm dlx typescript tsc --strict --pretty ./build/decaf_lib.d.ts
+            pnpm --package=typescript dlx tsc --strict --pretty ./build/decaf_lib.d.ts
           fi
         working-directory: js-cli-and-library
         shell: bash
@@ -202,7 +202,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
         uses: actions/cache@v4.2.0
         with:
@@ -253,7 +253,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
         uses: actions/cache@v4.2.0
         with:
@@ -301,7 +301,7 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
       - name: Setup | Rust
-        uses: dtolnay/rust-toolchain@1.80.0
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - name: Setup | Cache
