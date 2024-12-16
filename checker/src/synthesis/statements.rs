@@ -1,352 +1,311 @@
 use super::{
-    expressions::synthesize_multiple_expression, synthesize_block, variables::register_variable,
+    expressions::synthesise_multiple_expression, synthesise_block,
+    variables::synthesise_variable_declaration_item,
 };
 use crate::{
-    context::{ClosedOverReferencesInScope, ContextId, Scope},
+    context::Scope,
     diagnostics::TypeCheckError,
-    events::Event,
-    CheckingData, Environment, SynthesizableConditional, TypeId, Variable,
+    features::{
+        conditional::new_conditional_context,
+        exceptions::new_try_context,
+        iteration::{synthesise_iteration, IterationBehavior},
+    },
+    synthesis::DecafParser,
+    CheckingData, Environment, TypeId,
 };
-use parser::{
-    statements::{ConditionalElseStatement, UnconditionalElseStatement},
-    ASTNode, BlockOrSingleStatement, Statement,
-};
+
+use parser::{expressions::MultipleExpression, ASTNode, BlockOrSingleStatement, Statement};
 use std::collections::HashMap;
 
-pub type ExportedItems = HashMap<String, Variable>;
+pub type ExportedItems = HashMap<String, crate::features::variables::VariableOrImport>;
 pub type ReturnResult = Option<TypeId>;
 
-pub(super) fn synthesize_statement<T: crate::FSResolver>(
+pub struct StatementInformation {
+    label: Option<String>,
+}
+
+pub(super) fn synthesise_statement<T: crate::ReadFromFS>(
     statement: &Statement,
+    information: Option<StatementInformation>,
     environment: &mut Environment,
-    checking_data: &mut CheckingData<T>,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
 ) {
+    let position = statement
+        .get_position()
+        .with_source(environment.get_source());
     match statement {
         Statement::Expression(expression) => {
-            synthesize_multiple_expression(expression, environment, checking_data);
+            synthesise_multiple_expression(
+                expression,
+                environment,
+                checking_data,
+                TypeId::ANY_TYPE,
+            );
         }
-        // Statement::ExportStatement(_export_statement) => {
-        // if let Some(out_exports) = out_exports {
-        //     match export_statement {
-        //         parser::ExportStatement::Variable { exported, is_default, .. } => {
-        //             if *is_default {
-        //                 todo!();
-        //             }
-        //             match exported {
-        //                 parser::Exportable::ClassDeclaration(_)
-        //                 | parser::Exportable::FunctionDeclaration(_) => panic!(),
-        //                 parser::Exportable::VariableDeclaration(variable_decl_stmt) => {
-        //                     let is_constant = variable_decl_stmt.is_constant();
-        //                     let position = variable_decl_stmt.get_position().cloned();
-        //                     for variable_declaration in
-        //                         variable_decl_stmt.declarations.iter()
-        //                     {
-        //                         synthesize_variable_declaration(
-        //                             variable_declaration,
-        //                             is_constant,
-        //                             position.as_ref(),
-        //                             &Some(out_exports),
-        //                             environment,
-        //                             checking_data,
-        //
-        //                             module_information,
-        //                         )?;
-        //                     }
-        //                 }
-        //                 parser::Exportable::InterfaceDeclaration(_) => todo!(),
-        //                 parser::Exportable::TypeAlias(_) => todo!(),
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     checking_data.add_error(
-        //         TypeCheckError::NonTopLevelExport,
-        //         export_statement.get_position().into(),
-        //     )
-        // }
-        // }
-        Statement::Return(_kw, expression) => {
-            let returned = if let Some(expression) = expression {
-                synthesize_multiple_expression(expression, environment, checking_data)
-            } else {
-                TypeId::UNDEFINED_TYPE
-            };
-            environment.return_value(returned);
-        }
-        Statement::IfStatement(if_statement) => {
-            let condition =
-                synthesize_multiple_expression(&if_statement.condition, environment, checking_data);
-
-            environment.new_conditional_context(
-                condition,
-                IfStatementBranch::Branch(&if_statement.inner),
-                if !if_statement.else_conditions.is_empty() || if_statement.trailing_else.is_some()
-                {
-                    Some(IfStatementBranch::NestedConditional {
-                        conditional_elses: &if_statement.else_conditions,
-                        unconditional_else: if_statement.trailing_else.as_ref(),
-                    })
-                } else {
-                    None
-                },
+        Statement::Return(return_statement) => {
+            environment.return_value(
+                &crate::context::environment::Returnable::Statement(
+                    return_statement.0.as_ref(),
+                    return_statement.1,
+                ),
                 checking_data,
             );
-
-            /// Necessary because the parser treats it as a list rather than a tree
-            enum IfStatementBranch<'a> {
-                Branch(&'a BlockOrSingleStatement),
-                NestedConditional {
-                    conditional_elses: &'a [ConditionalElseStatement],
-                    unconditional_else: Option<&'a UnconditionalElseStatement>,
-                },
-            }
-
-            // TODO tidy
-            impl<'a> SynthesizableConditional for IfStatementBranch<'a> {
-                type ExpressionResult = ();
-
-                fn synthesize_condition<T: crate::FSResolver>(
-                    self,
-                    environment: &mut Environment,
-                    checking_data: &mut CheckingData<T>,
-                ) -> Self::ExpressionResult {
-                    match self {
-                        IfStatementBranch::Branch(branch) => match branch {
-                            BlockOrSingleStatement::Braced(statements) => {
-                                synthesize_block(&statements.0, environment, checking_data)
-                            }
-                            BlockOrSingleStatement::SingleStatement(statement) => {
-                                synthesize_statement(statement, environment, checking_data)
-                            }
-                        },
-                        IfStatementBranch::NestedConditional {
-                            conditional_elses,
-                            unconditional_else,
-                        } => {
-                            if let [current, other @ ..] = conditional_elses {
-                                let condition = synthesize_multiple_expression(
-                                    &current.condition,
-                                    environment,
-                                    checking_data,
-                                );
-                                environment.new_conditional_context(
-                                    condition,
-                                    IfStatementBranch::Branch(&current.inner),
-                                    if !other.is_empty() || unconditional_else.is_some() {
-                                        Some(IfStatementBranch::NestedConditional {
-                                            conditional_elses: other,
-                                            unconditional_else: unconditional_else.clone(),
-                                        })
-                                    } else {
-                                        None
-                                    },
-                                    checking_data,
-                                );
-                            } else {
-                                match &unconditional_else.unwrap().inner {
-                                    BlockOrSingleStatement::Braced(statements) => {
-                                        synthesize_block(&statements.0, environment, checking_data)
-                                    }
-                                    BlockOrSingleStatement::SingleStatement(statement) => {
-                                        synthesize_statement(statement, environment, checking_data)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                fn conditional_expression_result(
-                    _: TypeId,
-                    _: Self::ExpressionResult,
-                    _: Self::ExpressionResult,
-                    _: &mut crate::types::TypeStore,
-                ) -> Self::ExpressionResult {
-                    ()
-                }
-
-                fn default_result() -> Self::ExpressionResult {
-                    ()
-                }
-            }
         }
-        Statement::SwitchStatement(stmt) => {
+        Statement::If(if_statement) => {
+            fn run_condition<T: crate::ReadFromFS>(
+                current: (&MultipleExpression, &BlockOrSingleStatement),
+                others: &[(&MultipleExpression, &BlockOrSingleStatement)],
+                last: Option<&BlockOrSingleStatement>,
+                environment: &mut Environment,
+                checking_data: &mut CheckingData<T, super::DecafParser>,
+            ) {
+                let condition_pos = current.0.get_position();
+                let condition = synthesise_multiple_expression(
+                    current.0,
+                    environment,
+                    checking_data,
+                    TypeId::ANY_TYPE,
+                );
+
+                new_conditional_context(
+                    environment,
+                    (condition, condition_pos),
+                    |env: &mut Environment, data: &mut CheckingData<T, DecafParser>| {
+                        synthesise_block_or_single_statement(current.1, env, data);
+                    },
+                    if !others.is_empty() || last.is_some() {
+                        Some(
+                            |env: &mut Environment, data: &mut CheckingData<T, DecafParser>| {
+                                if let [current, others @ ..] = &others {
+                                    run_condition(*current, others, last, env, data);
+                                } else {
+                                    synthesise_block_or_single_statement(last.unwrap(), env, data);
+                                }
+                            },
+                        )
+                    } else {
+                        None
+                    },
+                    checking_data,
+                );
+            }
+
+            let others = if_statement
+                .else_conditions
+                .iter()
+                .map(|cond| (&cond.condition, &cond.inner))
+                .collect::<Vec<_>>();
+
+            let last = if_statement.trailing_else.as_ref().map(|b| &b.inner);
+
+            run_condition(
+                (&if_statement.condition, &if_statement.inner),
+                others.as_slice(),
+                last,
+                environment,
+                checking_data,
+            );
+        }
+        Statement::Switch(stmt) => {
             checking_data
                 .diagnostics_container
                 .add_error(TypeCheckError::Unsupported {
                     thing: "Switch statement",
-                    at: stmt.get_position().into_owned(),
+                    at: stmt.get_position().with_source(environment.get_source()),
                 });
         }
-        Statement::WhileStatement(stmt) => {
-            checking_data
-                .diagnostics_container
-                .add_error(TypeCheckError::Unsupported {
-                    thing: "While statement",
-                    at: stmt.get_position().into_owned(),
-                });
-        }
-        Statement::DoWhileStatement(stmt) => {
-            checking_data
-                .diagnostics_container
-                .add_error(TypeCheckError::Unsupported {
-                    thing: "Do while statement",
-                    at: stmt.get_position().into_owned(),
-                });
-        }
-        Statement::ForLoopStatement(stmt) => {
-            checking_data
-                .diagnostics_container
-                .add_error(TypeCheckError::Unsupported {
-                    thing: "For statement",
-                    at: stmt.get_position().into_owned(),
-                });
-            // let mut environment = environment.new_lexical_environment(ScopeType::Conditional {});
-            // match &for_statement.condition {
-            // 	ForLoopCondition::ForOf { keyword, variable, of } => {
-            // 		todo!()
-            // 		// let of_expression_instance =
-            // 		//     synthesize_expression(of, &mut environment, checking_data);
-            // 		// let iterator_result = get_type_iterator_with_error_handler(
-            // 		//     of_expression_instance.get_type(),
-            // 		//     &mut checking_data.diagnostics_container,
-            // 		//     Some(&mut checking_data.type_mappings.implementors_of_generic),
-            // 		//     of.get_position(),
-            // 		// )
-            // 		// .get_iterator_type();
-            // 		// synthesize_variable_field(
-            // 		//     variable.get_ast_mut(),
-            // 		//     &iterator_result,
-            // 		//     matches!(keyword, parser::statements::VariableKeyword::Const(_)),
-            // 		//     &mut environment,
-            // 		//     checking_data,
-            // 		//
-            // 		//
-            // 		// );
-            // 	}
-            // 	ForLoopCondition::ForIn { keyword, variable: _, in_condition: _ } => todo!(),
-            // 	ForLoopCondition::Statements { initializer, condition, final_expression } => {
-            // 		match initializer {
-            // 			parser::statements::ForLoopStatementInitializer::Statement(statement) => {
-            // 				synthesize_variable_declaration_statement(
-            // 					statement,
-            // 					&mut environment,
-            // 					checking_data,
-            //
-            // 				);
-            // 			}
-            // 			parser::statements::ForLoopStatementInitializer::Expression(_) => todo!(),
-            // 		}
-            // 		// synthesize_variable_declaration(
-            // 		//     initializer,
-            // 		//     *constant,
-            // 		//     &mut environment,
-            // 		//     checking_data,
-            // 		//
-            // 		//
-            // 		// );
-            // 		synthesize_expression(condition, &mut environment, checking_data);
-            // 		synthesize_expression(final_expression, &mut environment, checking_data);
-            // 	}
-            // };
-            // synthesize_block(&for_statement.statements, &mut environment, checking_data);
-        }
+        Statement::WhileLoop(stmt) => synthesise_iteration(
+            IterationBehavior::While(&stmt.condition),
+            information.and_then(|info| info.label),
+            environment,
+            checking_data,
+            |environment, checking_data| {
+                synthesise_block_or_single_statement(&stmt.inner, environment, checking_data);
+            },
+            position,
+        ),
+        Statement::DoWhileLoop(stmt) => synthesise_iteration(
+            IterationBehavior::DoWhile(&stmt.condition),
+            information.and_then(|info| info.label),
+            environment,
+            checking_data,
+            |environment, checking_data| {
+                synthesise_block_or_single_statement(&stmt.inner, environment, checking_data);
+            },
+            position,
+        ),
+        Statement::ForLoop(stmt) => match &stmt.condition {
+            parser::statements::ForLoopCondition::ForOf {
+                is_await: _,
+                keyword: _,
+                variable,
+                of,
+                position,
+            } => {
+                synthesise_iteration(
+                    IterationBehavior::ForOf {
+                        lhs: variable.get_ast_ref(),
+                        rhs: of,
+                    },
+                    information.and_then(|info| info.label),
+                    environment,
+                    checking_data,
+                    |environment, checking_data| {
+                        synthesise_block_or_single_statement(
+                            &stmt.inner,
+                            environment,
+                            checking_data,
+                        );
+                    },
+                    position.with_source(environment.get_source()),
+                );
+            }
+            parser::statements::ForLoopCondition::ForIn {
+                keyword: _,
+                variable,
+                r#in,
+                position,
+            } => {
+                synthesise_iteration(
+                    IterationBehavior::ForIn {
+                        lhs: variable.get_ast_ref(),
+                        rhs: r#in,
+                    },
+                    information.and_then(|info| info.label),
+                    environment,
+                    checking_data,
+                    |environment, checking_data| {
+                        synthesise_block_or_single_statement(
+                            &stmt.inner,
+                            environment,
+                            checking_data,
+                        );
+                    },
+                    position.with_source(environment.get_source()),
+                );
+            }
+            parser::statements::ForLoopCondition::Statements {
+                initialiser,
+                condition,
+                afterthought,
+                position,
+            } => synthesise_iteration(
+                IterationBehavior::For {
+                    initialiser,
+                    condition,
+                    afterthought,
+                },
+                information.and_then(|info| info.label),
+                environment,
+                checking_data,
+                |environment, checking_data| {
+                    crate::utilities::notify!(
+                        "environment.info.narrowed_values={:?}",
+                        environment.info.narrowed_values
+                    );
+                    synthesise_block_or_single_statement(&stmt.inner, environment, checking_data);
+                },
+                position.with_source(environment.get_source()),
+            ),
+        },
         Statement::Block(ref block) => {
-            let (result, _, _) = environment.new_lexical_environment_fold_into_parent(
+            let (_result, _, _) = environment.new_lexical_environment_fold_into_parent(
                 Scope::Block {},
                 checking_data,
-                |environment, checking_data| synthesize_block(&block.0, environment, checking_data),
+                |environment, checking_data| synthesise_block(&block.0, environment, checking_data),
             );
         }
-        Statement::Debugger(_pos) => {
-            // yay!
+        Statement::Continue(label, position) => {
+            if let Err(err) = environment.add_continue(label.as_deref(), *position) {
+                checking_data
+                    .diagnostics_container
+                    .add_error(TypeCheckError::NotInLoopOrCouldNotFindLabel(err));
+            }
         }
-        // TODO acknowledge '@ts-ignore' statements but error
-        Statement::Comment(..) | Statement::MultiLineComment(..) => {}
-        Statement::Cursor(cursor_id, _) => {
-            todo!("Dump environment data somewhere")
+        Statement::Break(label, position) => {
+            if let Err(err) = environment.add_break(label.as_deref(), *position) {
+                checking_data
+                    .diagnostics_container
+                    .add_error(TypeCheckError::NotInLoopOrCouldNotFindLabel(err));
+            }
         }
-        Statement::Continue(..) | Statement::Break(..) => {
-            checking_data.raise_unimplemented_error(
-                "continue and break statements",
-                statement.get_position().into_owned(),
+        Statement::Throw(stmt) => {
+            let thrown_value = synthesise_multiple_expression(
+                &stmt.0,
+                environment,
+                checking_data,
+                TypeId::ANY_TYPE,
             );
-        }
-        Statement::Throw(_, value) => {
-            let thrown_value = synthesize_multiple_expression(value, environment, checking_data);
-            environment.throw_value(thrown_value)
+            let thrown_position = stmt.1.with_source(environment.get_source());
+            environment.throw_value(thrown_value, thrown_position, &mut checking_data.types);
         }
         Statement::Labelled {
-            position,
+            position: _,
             name,
             statement,
         } => {
-            checking_data.raise_unimplemented_error(
-                "labelled statements",
-                statement.get_position().into_owned(),
-            );
-            synthesize_statement(statement, environment, checking_data);
-        }
-        Statement::VarVariable(_) => {
-            checking_data.raise_unimplemented_error(
-                "var variables statements",
-                statement.get_position().into_owned(),
+            // Labels on invalid statements is caught at parse time
+            synthesise_statement(
+                statement,
+                Some(StatementInformation {
+                    label: Some(name.clone()),
+                }),
+                environment,
+                checking_data,
             );
         }
-        Statement::TryCatchStatement(stmt) => {
-            let throw_type: TypeId =
-                environment.new_try_context(checking_data, |environment, checking_data| {
-                    synthesize_block(&stmt.try_inner.0, environment, checking_data);
-                });
-
-            if let Some(ref catch_block) = stmt.catch_inner {
-                // TODO catch when never
-                environment.new_lexical_environment_fold_into_parent(
-                    crate::Scope::Block {},
+        Statement::VarVariable(stmt) => {
+            for declaration in &stmt.declarations {
+                synthesise_variable_declaration_item(
+                    declaration,
+                    environment,
                     checking_data,
-                    |environment, checking_data| {
-                        if let Some((clause, r#type)) = &stmt.exception_var {
-                            // TODO clause.type_annotation
-                            register_variable(
-                                clause.get_ast_ref(),
-                                environment,
-                                checking_data,
-                                crate::context::VariableRegisterBehavior::CatchVariable {
-                                    ty: throw_type,
-                                },
-                                // TODO
-                                None,
-                            );
-                        }
-                        synthesize_block(&catch_block.0, environment, checking_data);
-                    },
+                    None,
+                    false,
                 );
             }
         }
-        Statement::Empty(_) => {}
+        Statement::TryCatch(stmt) => new_try_context(
+            &stmt.try_inner,
+            stmt.catch_inner.as_ref().map(|inner| {
+                (
+                    inner,
+                    stmt.exception_var
+                        .as_ref()
+                        .map(|(var, ty)| (var.get_ast_ref(), ty.as_ref())),
+                )
+            }),
+            stmt.finally_inner.as_ref(),
+            environment,
+            checking_data,
+        ),
+        // TODO do these higher up in the block. To set relevant information
+        Statement::Comment(s, _) if s.starts_with("@ts") => {
+            crate::utilities::notify!("acknowledge '@ts-ignore' and other comments");
+        }
+        Statement::MultiLineComment(s, _) if s.starts_with('*') => {
+            crate::utilities::notify!("acknowledge '@ts-ignore' and other comments");
+        }
+        Statement::Comment(..)
+        | Statement::MultiLineComment(..)
+        | Statement::Debugger(_)
+        | Statement::Empty(_)
+        | Statement::AestheticSemiColon(_) => {}
     }
 }
 
-fn synthesize_block_or_single_statement<T: crate::FSResolver>(
+/// Expects that this caller has already create a context for this to run in
+fn synthesise_block_or_single_statement<T: crate::ReadFromFS>(
     block_or_single_statement: &BlockOrSingleStatement,
     environment: &mut Environment,
-    checking_data: &mut CheckingData<T>,
-    scope: Scope,
-) -> (
-    (),
-    Option<(Vec<Event>, ClosedOverReferencesInScope)>,
-    ContextId,
+    checking_data: &mut CheckingData<T, super::DecafParser>,
 ) {
-    environment.new_lexical_environment_fold_into_parent(
-        scope,
-        checking_data,
-        |environment, checking_data| match block_or_single_statement {
-            BlockOrSingleStatement::Braced(block) => {
-                synthesize_block(&block.0, environment, checking_data)
-            }
-            BlockOrSingleStatement::SingleStatement(statement) => {
-                synthesize_statement(statement, environment, checking_data)
-            }
-        },
-    )
+    match block_or_single_statement {
+        BlockOrSingleStatement::Braced(block) => {
+            synthesise_block(&block.0, environment, checking_data);
+        }
+        BlockOrSingleStatement::SingleStatement(statement) => {
+            synthesise_statement(statement, None, environment, checking_data);
+        }
+    }
 }

@@ -1,64 +1,60 @@
 {
-  "name": "decaf",
-  "type": "module",
-  "version": "0.0.0",
-  "packageManager": "pnpm@9.7.0",
-  "description": "A JavaScript compiler and TypeScript checker written in Rust with a focus on static analysis and runtime performance",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
-  "types": "./build/decaf.d.ts",
-  "license": "UNLICENSED",
-  "exports": {
-    ".": {
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.mjs",
-      "types": "./build/decaf.d.ts"
-    },
-    "./initialized": {
-      "require": "./dist/initilized.cjs",
-      "import": "./dist/initilized.mjs"
-    }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/re-taro/decaf.git",
-    "directory": "js-cli-and-library"
-  },
-  "files": [
-    "dist",
-    "build/decaf.d.ts"
-  ],
-  "scripts": {
-    "clean": "rmdir dist && rmdir build",
-    "build": "cargo build --lib --target wasm32-unknown-unknown && pnpm run bind && pnpm run build-js",
-    "build-release": "cargo build --lib --release --target wasm32-unknown-unknown && pnpm run bind-release && pnpm run build-js",
-    "bind": "wasm-bindgen --out-dir build --target web ../target/wasm32-unknown-unknown/debug/decaf_lib.wasm",
-    "bind-release": "wasm-bindgen --out-dir build --target web ../target/wasm32-unknown-unknown/release/decaf_lib.wasm",
-    "build-js": "unbuild && cp ./build/decaf_lib_bg.wasm dist/shared"
-  },
-  "build": {
-    "failOnWarn": false,
-    "entries": [
-      {
-        "builder": "rollup",
-        "input": "./src/index"
-      },
-      {
-        "builder": "rollup",
-        "input": "./src/initialized"
-      },
-      {
-        "builder": "rollup",
-        "input": "./src/cli"
-      }
-    ],
-    "rollup": {
-      "emitCJS": true,
-      "commonjs": true
-    }
-  },
-  "bin": {
-    "decaf": "./dist/cli.cjs"
-  },
-  "author": "Rintaro Itokawa <me@re-taro.dev> (https://re-taro.dev)"
+	"name": "decaf",
+	"module": "./dist/index.mjs",
+	"type": "module",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs"
+		},
+		"./initialised": {
+			"import": "./dist/initialised.mjs"
+		},
+		"./cli": {
+			"import": "./dist/cli.mjs"
+		}
+	},
+	"scripts": {
+		"clean": "rmdir dist && rmdir build",
+		"build": "wasm-pack build --dev --target web --no-pack --out-dir js-cli-and-library/build && npm run build-js",
+		"build-release": "wasm-pack build --release --target web --no-pack --out-dir js-cli-and-library/build && npm run build-js",
+		"--": "Manually assembles the output",
+		"build-manual-bind": "cargo build --lib --target wasm32-unknown-unknown --profile debug && wasm-bindgen --out-dir build --target web ../../target/wasm32-unknown-unknown/debug/decaf_lib.wasm && npm run build-js",
+		"build-js": "unbuild && cp ./build/decaf_lib_bg.wasm dist/shared && cp src/cli_node.cjs dist/cli.cjs",
+		"test": "npm run build && npm run run-tests",
+		"run-tests": "node --test"
+	},
+	"files": [
+		"dist"
+	],
+	"bin": {
+		"decaf": "./dist/cli.mjs"
+	},
+	"build": {
+		"failOnWarn": false,
+		"entries": [
+			{
+				"builder": "rollup",
+				"input": "./src/index"
+			},
+			{
+				"builder": "rollup",
+				"input": "./src/initialised"
+			},
+			{
+				"builder": "rollup",
+				"input": "./src/cli"
+			}
+		],
+		"declaration": true,
+		"rollup": {
+			"esbuild": {
+				"target": "esnext"
+			}
+		}
+	},
+	"devDependencies": {
+		"strip-ansi": "7.1.0",
+		"wasm-pack": "0.13.0",
+		"snapshot-fixtures": "1.2.0"
+	}
 }

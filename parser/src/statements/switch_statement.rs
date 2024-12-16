@@ -1,53 +1,52 @@
-use std::borrow::Cow;
-
 use iterator_endiate::EndiateIteratorExt;
 use source_map::Span;
-use tokenizer_lib::Token;
+use tokenizer_lib::{sized_tokens::TokenEnd, Token};
 use visitable_derive::Visitable;
 
 use crate::{
-    errors::parse_lexing_error, ASTNode, Expression, ParseErrors, ParseOptions, Statement,
+    ast::MultipleExpression, derive_ASTNode, errors::parse_lexing_error,
+    throw_unexpected_token_with_token, ASTNode, Expression, ParseOptions, StatementOrDeclaration,
     TSXKeyword, TSXToken,
 };
 
-#[derive(Debug, PartialEq, Eq, Clone, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, PartialEq, Clone, Visitable, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
 pub struct SwitchStatement {
-    pub case: Expression,
+    pub case: MultipleExpression,
     pub branches: Vec<SwitchBranch>,
     pub position: Span,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[derive(Debug, PartialEq, Clone, Visitable)]
+#[apply(derive_ASTNode)]
 pub enum SwitchBranch {
-    Default(Vec<Statement>),
-    Case(Expression, Vec<Statement>),
+    Default(Vec<StatementOrDeclaration>),
+    Case(Expression, Vec<StatementOrDeclaration>),
 }
 
 impl ASTNode for SwitchStatement {
-    fn get_position(&self) -> Cow<Span> {
-        Cow::Borrowed(&self.position)
+    fn get_position(&self) -> Span {
+        self.position
     }
 
     fn from_reader(
-        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, Span>,
+        reader: &mut impl tokenizer_lib::TokenReader<crate::TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &ParseOptions,
+        options: &ParseOptions,
     ) -> Result<Self, crate::ParseError> {
-        let start_span = reader.expect_next(TSXToken::Keyword(TSXKeyword::Switch))?;
+        let start = state.expect_keyword(reader, TSXKeyword::Switch)?;
+
         reader.expect_next(crate::TSXToken::OpenParentheses)?;
-        let case = Expression::from_reader(reader, state, settings)?;
+        let case = MultipleExpression::from_reader(reader, state, options)?;
         reader.expect_next(crate::TSXToken::CloseParentheses)?;
         reader.expect_next(crate::TSXToken::OpenBrace)?;
+
         let mut branches = Vec::new();
-        let close_brace_pos: Span;
+
+        // TODO not great has this works
+        let close_brace_pos: TokenEnd;
+
         loop {
             let case: Option<Expression> = match reader.next().ok_or_else(parse_lexing_error)? {
                 Token(TSXToken::Keyword(TSXKeyword::Default), _) => {
@@ -55,115 +54,122 @@ impl ASTNode for SwitchStatement {
                     None
                 }
                 Token(TSXToken::Keyword(TSXKeyword::Case), _) => {
-                    let case = Expression::from_reader(reader, state, settings)?;
+                    let case = Expression::from_reader(reader, state, options)?;
                     reader.expect_next(TSXToken::Colon)?;
                     Some(case)
                 }
                 Token(TSXToken::CloseBrace, pos) => {
-                    close_brace_pos = pos;
+                    close_brace_pos = TokenEnd::new(pos.0 + 1);
                     break;
                 }
-                Token(token, pos) => {
-                    return Err(crate::ParseError::new(
-                        ParseErrors::UnexpectedToken {
-                            expected: &[
-                                TSXToken::Keyword(TSXKeyword::Default),
-                                TSXToken::Keyword(TSXKeyword::Case),
-                                TSXToken::CloseBrace,
-                            ],
-                            found: token,
-                        },
-                        pos,
-                    ))
+                token => {
+                    return throw_unexpected_token_with_token(
+                        token,
+                        &[
+                            TSXToken::Keyword(TSXKeyword::Default),
+                            TSXToken::Keyword(TSXKeyword::Case),
+                            TSXToken::CloseBrace,
+                        ],
+                    );
                 }
             };
-            let mut statements = Vec::new();
+
+            // This is a modified form of Block::from_reader where `TSXKeyword::Case` and
+            // `TSXKeyword::Default` are delimiters
+            let mut items = Vec::new();
             loop {
                 if let Some(Token(
-                    TSXToken::Keyword(TSXKeyword::Case)
-                    | TSXToken::Keyword(TSXKeyword::Default)
+                    TSXToken::Keyword(TSXKeyword::Case | TSXKeyword::Default)
                     | TSXToken::CloseBrace,
                     _,
                 )) = reader.peek()
                 {
                     break;
                 }
-                statements.push(Statement::from_reader(reader, state, settings)?);
-                if let Some(Token(TSXToken::SemiColon, _)) = reader.peek() {
-                    reader.next();
+                let value = StatementOrDeclaration::from_reader(reader, state, options)?;
+                if value.requires_semi_colon() {
+                    let _ = crate::expect_semi_colon(
+                        reader,
+                        &state.line_starts,
+                        value.get_position().end,
+                        options,
+                    )?;
                 }
+                // Could skip over semi colons regardless. But they are technically empty statements 🤷‍♂️
+                items.push(value);
             }
             if let Some(case) = case {
-                branches.push(SwitchBranch::Case(case, statements))
+                branches.push(SwitchBranch::Case(case, items));
             } else {
-                branches.push(SwitchBranch::Default(statements))
+                branches.push(SwitchBranch::Default(items));
             }
         }
         Ok(Self {
             case,
             branches,
-            position: start_span.union(&close_brace_pos),
+            position: start.union(close_brace_pos),
         })
     }
 
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         buf.push_str("switch");
-        settings.add_gap(buf);
+        options.push_gap_optionally(buf);
         buf.push('(');
-        self.case.to_string_from_buffer(buf, settings, depth);
+        self.case.to_string_from_buffer(buf, options, local);
         buf.push(')');
-        settings.add_gap(buf);
+        options.push_gap_optionally(buf);
         buf.push('{');
-        for branch in self.branches.iter() {
-            if settings.pretty {
+        for branch in &self.branches {
+            if options.pretty {
                 buf.push_new_line();
-                settings.add_indent(depth + 1, buf);
+                options.add_indent(local.depth + 1, buf);
             }
+            let local = local.next_level();
             match branch {
                 SwitchBranch::Default(statements) => {
                     buf.push_str("default:");
                     for (at_end, stmt) in statements.iter().endiate() {
-                        if settings.pretty {
+                        if options.pretty {
                             buf.push_new_line();
-                            settings.add_indent(depth + 2, buf);
+                            options.add_indent(local.depth + 1, buf);
                         }
-                        stmt.to_string_from_buffer(buf, settings, depth + 2);
+                        stmt.to_string_from_buffer(buf, options, local.next_level());
                         if stmt.requires_semi_colon() {
                             buf.push(';');
                         }
-                        if settings.pretty && !at_end {
+                        if options.pretty && !at_end {
                             buf.push_new_line();
                         }
                     }
                 }
                 SwitchBranch::Case(case, statements) => {
                     buf.push_str("case ");
-                    case.to_string_from_buffer(buf, settings, depth);
+                    case.to_string_from_buffer(buf, options, local);
                     buf.push(':');
                     for (at_end, stmt) in statements.iter().endiate() {
-                        if settings.pretty {
+                        if options.pretty {
                             buf.push_new_line();
-                            settings.add_indent(depth + 2, buf);
+                            options.add_indent(local.depth + 1, buf);
                         }
-                        stmt.to_string_from_buffer(buf, settings, depth + 2);
+                        stmt.to_string_from_buffer(buf, options, local.next_level());
                         if stmt.requires_semi_colon() {
                             buf.push(';');
                         }
-                        if settings.pretty && !at_end {
+                        if options.pretty && !at_end {
                             buf.push_new_line();
                         }
                     }
                 }
             }
         }
-        if settings.pretty {
+        if options.pretty {
             buf.push_new_line();
-            settings.add_indent(depth, buf);
+            options.add_indent(local.depth, buf);
         }
         buf.push('}');
     }

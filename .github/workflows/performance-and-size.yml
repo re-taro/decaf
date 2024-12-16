@@ -1,41 +1,189 @@
 name: Performance and size
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
-    branches:
-      - main
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
-  RUST_BACKTRACE: short
-  RUSTFLAGS: "-D warnings"
-  RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  hyperfine:
+  run-benchmarks:
     runs-on: ubuntu-latest
+
     steps:
       - name: Setup | Checkout
         uses: actions/checkout@v4.1.7
-      - name: Setup | Rust
+      - name: Setup | Set up Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Setup | Cache
-        uses: Swatinem/rust-cache@v2.7.3
+        uses: actions/cache@v4.2.0
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Setup | Install hyperfine
-        run: cargo install hyperfine
-      - name: Build decaf
+        uses: brndnmtthws/rust-action-cargo-binstall@v1.1.0
+        with:
+          packages: hyperfine
+      - name: Setup | Install valgrind
+        run: sudo apt-get install valgrind
+      - name: Setup | Build decaf
         run: cargo build --release
         env:
           CARGO_PROFILE_RELEASE_DEBUG: true
-      - name: Run hyperfine
+      - name: Profile | Set compilers
+        id: compilers
+        shell: bash
         run: |
-          curl -O https://gist.githubusercontent.com/re-taro/d51e66d4dca52d4a82d9fc5ab903efa6/raw/9deaab38fb294d7d3788351a15dbf46b4cb8c6bc/example.js
-          hyperfine './target/release/decaf build example.js'
-      - name: Print (linux) binary size
+          if [ -d "previous-decaf" ]; then
+            echo "::notice::Comparing against previous"
+            echo "BINARIES=./target/release/decaf,./previous-decaf/decaf" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Running singularly"
+            echo "BINARIES=./target/release/decaf" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Profile | Run checker performance
+        shell: bash
         run: |
-          echo "Binary is $(stat -c %s ./target/release/decaf) bytes"
+          # Generate a file which contains everything that decaf currently implements
+          cargo run -p decaf-parser \
+           --example code_blocks_to_script ./checker/specification/specification.md \
+           --comment-headers \
+           --out ./demo.tsx
+
+          echo "### Checking
+          \`\`\`shell
+          $(hyperfine -i -L compiler ${{ steps.compilers.outputs.BINARIES }} '{compiler} check demo.tsx')
+          \`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          echo "<details>
+          <summary>Input</summary>
+
+          > Code generated from specification.md. this is not meant to accurately represent a program but instead give an idea for how it scales across all the type checking features
+          \`\`\`tsx
+          $(cat ./demo.tsx)
+          \`\`\`
+          </details>
+          " >> $GITHUB_STEP_SUMMARY
+
+          echo "::info::Wrote code to summary"
+
+          command_output=$(./target/release/decaf check demo.tsx --timings --max-diagnostics all 2>&1 || true)
+
+          diagnostics=""; statistics=""; found_splitter=false;
+          while IFS= read -r line; do
+              if [[ "$line" == "---"* ]]; then found_splitter=true;
+              elif [[ "$found_splitter"  == false ]]; then diagnostics+="$line"$'\n';
+              else statistics+="$line"$'\n'; fi
+          done <<< "$command_output"
+
+          echo "<details>
+          <summary>Diagnostics</summary>
+
+          \`\`\`
+          $diagnostics
+          \`\`\`
+          </details>
+          " >> $GITHUB_STEP_SUMMARY
+
+          if [ -d "previous-decaf" ]; then
+            OUT=$(./previous-decaf/decaf check demo.tsx --timings --max-diagnostics all 2>&1 || true)
+            $base_statistics=$(echo $OUT | rg "Diagnostics:" -A 100)
+            echo "
+            <details>
+            <summary>Statistics</summary>
+
+            \`\`\`
+            $statistics
+            \`\`\`
+            against base
+            \`\`\`
+            $base_statistics
+            \`\`\`
+            against base
+            </details>
+            " >> $GITHUB_STEP_SUMMARY
+          else
+            echo "<details>
+            <summary>Statistics</summary>
+
+            \`\`\`
+            $statistics
+            \`\`\`
+            </details>" >> $GITHUB_STEP_SUMMARY
+          fi
+      - name: Profile | Run checker performance w/staging
+        shell: bash
+        if: github.ref_name != 'main'
+        run: |
+          echo "::group::Running all"
+
+          cat ./checker/specification/specification.md ./checker/specification/staging.md > all.md
+          cargo run -p decaf-parser --example code_blocks_to_script all.md --comment-headers --out ./all.tsx
+
+          ./target/release/decaf check all.tsx --timings || true
+
+          hyperfine -i -L compiler ${{ steps.compilers.outputs.BINARIES }} '{compiler} check all.tsx'
+          echo "::endgroup::"
+      - name: Profile | Run checker performance on large file
+        shell: bash
+        run: |
+          echo "::group::Running large"
+
+          cat ./checker/specification/specification.md > main.md
+          cargo run -p decaf-parser --example code_blocks_to_script main.md --comment-headers --out ./code.tsx
+
+          for i in {1..10}; do
+            cat ./code.tsx >> large.tsx
+          done
+
+          ./target/release/decaf check large.tsx --timings --max-diagnostics 0 || true
+
+          hyperfine -i -L compiler ${{ steps.compilers.outputs.BINARIES }} '{compiler} check large.tsx'
+          echo "::endgroup::"
+      - name: Profile | Valgrind and callgrind
+        shell: bash
+        continue-on-error: true
+        run: |
+          IFS=',' read -ra ITEMS <<< ${{ steps.compilers.outputs.BINARIES }}
+
+          for compiler in ${ITEMS[@]}; do
+            echo "::group::Running $compiler"
+
+            echo "::group::Callgrind"
+            valgrind --tool=callgrind --callgrind-out-file=cpu-out $compiler check demo.tsx | true
+            echo "CPU usage:"
+            head -n100 cpu-out
+            echo "::endgroup::"
+
+            echo "::group::Valgrind"
+            valgrind --log-file=memory-out $compiler check demo.tsx | true
+            echo "Memory usage:"
+            cat memory-out
+            echo "::endgroup::"
+
+            echo "::endgroup::"
+          done
+      - name: Profile | Run parsing & stringing (minfied) benchmarks
+        shell: bash
+        continue-on-error: true
+        run: |
+          strings=(
+            "https://esm.sh/v128/react-dom@18.2.0/es2022/react-dom.mjs"
+            "https://esm.sh/v135/typescript@5.3.3/es2022/typescript.mjs"
+          )
+
+          for url in "${strings[@]}"; do
+            # TODO copy expression
+            curl -sS $url > input.js
+
+            echo "::group::Comparison"
+            hyperfine -i \
+              -L compiler ${{ steps.compilers.outputs.BINARIES }} \
+              '{compiler} ast-explorer full input.js --timings'
+            echo "::endgroup::"
+          done

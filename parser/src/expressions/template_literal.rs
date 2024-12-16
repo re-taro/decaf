@@ -1,144 +1,87 @@
-use std::borrow::Cow;
-
+use super::{Expression, MultipleExpression};
 use crate::{
-    errors::parse_lexing_error, ASTNode, Expression, ParseOptions, ParseResult, Span, TSXToken,
+    derive_ASTNode, errors::parse_lexing_error, ASTNode, ParseOptions, ParseResult, Span, TSXToken,
     Token, TokenReader,
 };
+use tokenizer_lib::sized_tokens::TokenStart;
 use visitable_derive::Visitable;
 
-#[derive(Debug, Clone, PartialEq, Eq, Visitable)]
-#[cfg_attr(
-    feature = "self-rust-tokenize",
-    derive(self_rust_tokenize::SelfRustTokenize)
-)]
+#[apply(derive_ASTNode)]
+#[derive(Debug, Clone, PartialEq, Visitable, get_field_by_type::GetFieldByType)]
+#[get_field_by_type_target(Span)]
 pub struct TemplateLiteral {
     pub tag: Option<Box<Expression>>,
-    pub parts: Vec<TemplateLiteralPart<Expression>>,
+    pub parts: Vec<(String, MultipleExpression)>,
+    pub last: String,
     pub position: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TemplateLiteralPart<T: ASTNode> {
-    Static(String),
-    Dynamic(Box<T>),
-}
-
-#[cfg(feature = "self-rust-tokenize")]
-impl<T: ASTNode + self_rust_tokenize::SelfRustTokenize> self_rust_tokenize::SelfRustTokenize
-    for TemplateLiteralPart<T>
-{
-    fn append_to_token_stream(
-        &self,
-        token_stream: &mut self_rust_tokenize::proc_macro2::TokenStream,
-    ) {
-        match self {
-            TemplateLiteralPart::Static(inner) => {
-                let inner = self_rust_tokenize::SelfRustTokenize::to_tokens(inner);
-                token_stream
-                    .extend(self_rust_tokenize::quote!(TemplateLiteralPart::Static(#inner)));
-            }
-            TemplateLiteralPart::Dynamic(inner) => {
-                let inner = self_rust_tokenize::SelfRustTokenize::to_tokens(inner);
-                token_stream
-                    .extend(self_rust_tokenize::quote!(TemplateLiteralPart::Dynamic(#inner)));
-            }
-        }
-    }
-}
-
-impl<T: ASTNode + crate::Visitable> crate::Visitable for TemplateLiteralPart<T> {
-    fn visit<TData>(
-        &self,
-        visitors: &mut (impl crate::VisitorReceiver<TData> + ?Sized),
-        data: &mut TData,
-        settings: &crate::VisitSettings,
-        chain: &mut temporary_annex::Annex<crate::Chain>,
-    ) {
-        if let Self::Dynamic(dynamic) = self {
-            dynamic.visit(visitors, data, settings, chain)
-        }
-    }
-
-    fn visit_mut<TData>(
-        &mut self,
-        visitors: &mut (impl crate::VisitorMutReceiver<TData> + ?Sized),
-        data: &mut TData,
-        settings: &crate::VisitSettings,
-        chain: &mut temporary_annex::Annex<crate::Chain>,
-    ) {
-        if let Self::Dynamic(dynamic) = self {
-            dynamic.visit_mut(visitors, data, settings, chain)
-        }
-    }
-}
-
 impl ASTNode for TemplateLiteral {
-    fn get_position(&self) -> Cow<Span> {
-        Cow::Borrowed(&self.position)
+    fn get_position(&self) -> Span {
+        self.position
     }
 
     fn from_reader(
-        reader: &mut impl TokenReader<TSXToken, Span>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &ParseOptions,
+        options: &ParseOptions,
     ) -> ParseResult<Self> {
-        let start_pos = reader.expect_next(TSXToken::TemplateLiteralStart)?;
-        Self::from_reader_sub_start_with_tag(reader, state, settings, None, start_pos)
+        let start = reader.expect_next(TSXToken::TemplateLiteralStart)?;
+        Self::from_reader_sub_start_with_tag(reader, state, options, None, start)
     }
 
     fn to_string_from_buffer<T: source_map::ToString>(
         &self,
         buf: &mut T,
-        settings: &crate::ToStringOptions,
-        depth: u8,
+        options: &crate::ToStringOptions,
+        local: crate::LocalToStringInformation,
     ) {
         if let Some(tag) = &self.tag {
-            tag.to_string_from_buffer(buf, settings, depth);
+            tag.to_string_from_buffer(buf, options, local);
         }
         buf.push('`');
-        for part in self.parts.iter() {
-            match part {
-                TemplateLiteralPart::Static(content) => {
-                    buf.push_str_contains_new_line(content.as_str())
-                }
-                TemplateLiteralPart::Dynamic(expression) => {
-                    buf.push_str("${");
-                    expression.to_string_from_buffer(buf, settings, depth);
-                    buf.push('}');
-                }
-            }
+        for (static_part, dynamic_part) in &self.parts {
+            buf.push_str_contains_new_line(static_part.as_str());
+
+            buf.push_str("${");
+            dynamic_part.to_string_from_buffer(buf, options, local);
+            buf.push('}');
         }
+        buf.push_str_contains_new_line(self.last.as_str());
         buf.push('`');
     }
 }
 
 impl TemplateLiteral {
     pub(crate) fn from_reader_sub_start_with_tag(
-        reader: &mut impl TokenReader<TSXToken, Span>,
+        reader: &mut impl TokenReader<TSXToken, crate::TokenStart>,
         state: &mut crate::ParsingState,
-        settings: &ParseOptions,
+        options: &ParseOptions,
         tag: Option<Box<Expression>>,
-        start_position: Span,
+        start: TokenStart,
     ) -> ParseResult<Self> {
-        let mut parts = Vec::<TemplateLiteralPart<_>>::new();
+        let mut parts = Vec::new();
+        let mut last = String::new();
         loop {
             match reader.next().ok_or_else(parse_lexing_error)? {
                 Token(TSXToken::TemplateLiteralChunk(chunk), _) => {
-                    parts.push(TemplateLiteralPart::Static(chunk));
+                    last = chunk;
                 }
                 Token(TSXToken::TemplateLiteralExpressionStart, _) => {
-                    let expression = Expression::from_reader(reader, state, settings)?;
+                    let expression = MultipleExpression::from_reader(reader, state, options)?;
+                    parts.push((std::mem::take(&mut last), expression));
                     reader.expect_next(TSXToken::TemplateLiteralExpressionEnd)?;
-                    parts.push(TemplateLiteralPart::Dynamic(Box::new(expression)));
                 }
-                Token(TSXToken::TemplateLiteralEnd, end_position) => {
+                t @ Token(TSXToken::TemplateLiteralEnd, _) => {
                     return Ok(Self {
                         parts,
+                        last,
                         tag,
-                        position: start_position.union(&end_position),
+                        position: start.union(t.get_end()),
                     });
                 }
-                _ => unreachable!(),
+                Token(TSXToken::EOS, _) => return Err(parse_lexing_error()),
+                t => unreachable!("Token {:?}", t),
             }
         }
     }

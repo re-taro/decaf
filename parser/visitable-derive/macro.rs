@@ -5,7 +5,10 @@ use syn_helpers::{
     derive_trait,
     proc_macro2::{Ident, Span},
     quote,
-    syn::{parse_macro_input, parse_quote, DeriveInput, Stmt, __private::quote::format_ident},
+    syn::{
+        self, parse_macro_input, parse_quote, DeriveInput, Stmt, __private::quote::format_ident,
+        parse::Parse,
+    },
     Constructable, FieldMut, HasAttributes, NamedOrUnnamedFieldMut, Trait, TraitItem,
 };
 
@@ -31,7 +34,7 @@ pub fn generate_visit_implementation(input: TokenStream) -> TokenStream {
         vec![
             parse_quote!(visitors: &mut (impl crate::visiting::VisitorReceiver<TData> + ?Sized)),
             parse_quote!(data: &mut TData),
-            parse_quote!(settings: &crate::VisitSettings),
+            parse_quote!(options: &crate::VisitOptions),
             parse_quote!(chain: &mut ::temporary_annex::Annex<crate::visiting::Chain>),
         ],
         None,
@@ -45,7 +48,7 @@ pub fn generate_visit_implementation(input: TokenStream) -> TokenStream {
         vec![
             parse_quote!(visitors: &mut (impl crate::visiting::VisitorMutReceiver<TData> + ?Sized)),
             parse_quote!(data: &mut TData),
-            parse_quote!(settings: &crate::VisitSettings),
+            parse_quote!(options: &crate::VisitOptions),
             parse_quote!(chain: &mut ::temporary_annex::Annex<crate::visiting::Chain>),
         ],
         None,
@@ -75,15 +78,35 @@ fn generated_visit_item(
 ) -> Result<Vec<Stmt>, Box<dyn Error>> {
     let attributes = item.structure.get_attributes();
 
-    let visit_self = attributes
-        .iter()
-        .any(|attr| attr.path.is_ident(VISIT_SELF_NAME));
-
-    let visit_with_chain = attributes.iter().find_map(|attr| {
-        attr.path
-            .is_ident(VISIT_WITH_CHAIN_NAME)
-            .then_some(&attr.tokens)
+    let visit_self = attributes.iter().find_map(|attr| {
+        attr.path().is_ident(VISIT_SELF_NAME).then_some({
+            let mut ident = None::<Ident>;
+            let res = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("under") {
+                    let value = meta.value()?;
+                    ident = value.parse()?;
+                    Ok(())
+                } else {
+                    Err(meta.error("expected `under=...`"))
+                }
+            });
+            if res.is_ok() {
+                Some(ident.unwrap())
+            } else {
+                // TODO
+                None
+            }
+        })
     });
+
+    let visit_with_chain: Option<syn::Expr> = attributes
+        .iter()
+        .find_map(|attr| {
+            attr.path()
+                .is_ident(VISIT_WITH_CHAIN_NAME)
+                .then_some(attr.parse_args().ok())
+        })
+        .flatten();
 
     let mut lines = Vec::new();
 
@@ -91,14 +114,19 @@ fn generated_visit_item(
         lines.push(parse_quote!( let mut chain = &mut chain.push_annex(#expr_tokens); ))
     }
 
-    if visit_self {
-        let struct_name_as_snake_case = &item.structure.get_name().to_string().to_snake_case();
+    if let Some(under) = visit_self {
         let mut_postfix = matches!(visit_type, VisitType::Mutable)
             .then_some("_mut")
             .unwrap_or_default();
-        let func_name = format_ident!("visit_{}{}", struct_name_as_snake_case, mut_postfix);
 
-        lines.push(parse_quote!( visitors.#func_name(self, data,  chain); ))
+        if let Some(under) = under {
+            let func_name = format_ident!("visit_{}{}", under, mut_postfix);
+            lines.push(parse_quote!(visitors.#func_name(self.into(), data,  chain); ))
+        } else {
+            let struct_name_as_snake_case = &item.structure.get_name().to_string().to_snake_case();
+            let func_name = format_ident!("visit_{}{}", struct_name_as_snake_case, mut_postfix);
+            lines.push(parse_quote!( visitors.#func_name(self, data,  chain); ))
+        }
     }
 
     let mut field_lines = item.map_constructable(|mut constructable| {
@@ -108,10 +136,20 @@ fn generated_visit_item(
 			.flat_map(|mut field: NamedOrUnnamedFieldMut| -> Option<Stmt> {
 				let attributes = field.get_attributes();
 
-				let skip_field = attributes.iter().any(|attr| attr.path.is_ident(VISIT_SKIP_NAME));
+				let skip_field_attr =
+					attributes.iter().find(|attr| attr.path().is_ident(VISIT_SKIP_NAME));
+
+				// TODO maybe?
+				// // None == unconditional
+				// let _skip_field_expression: Option<Expr> =
+				// 	skip_field_attr.as_ref().map(|attr| attr.bracket_token);
 
 				let visit_with_chain = attributes.iter().find_map(|attr| {
-					attr.path.is_ident(VISIT_WITH_CHAIN_NAME).then_some(&attr.tokens)
+					// TODO error rather than flatten
+					attr.path()
+						.is_ident(VISIT_WITH_CHAIN_NAME)
+						.then_some(attr.parse_args_with(syn::Expr::parse).ok())
+						.flatten()
 				});
 
 				let chain = if let Some(expr_tokens) = visit_with_chain {
@@ -120,14 +158,14 @@ fn generated_visit_item(
 					quote!(chain)
 				};
 
-				if !skip_field {
+				if skip_field_attr.is_none() {
 					let reference = field.get_reference();
 					Some(match visit_type {
 						VisitType::Immutable => parse_quote! {
-							crate::Visitable::visit(#reference, visitors, data, settings, #chain);
+							crate::Visitable::visit(#reference, visitors, data, options, #chain);
 						},
 						VisitType::Mutable => parse_quote! {
-							crate::Visitable::visit_mut(#reference, visitors, data, settings, #chain);
+							crate::Visitable::visit_mut(#reference, visitors, data, options, #chain);
 						},
 					})
 				} else {
