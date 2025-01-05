@@ -1,0 +1,75 @@
+{
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk",
+      "command": "latexmk",
+      "args": [
+        "%DOCFILE_EXT%"
+      ]
+    },
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "compile",
+      "tools": [
+        "latexmk",
+      ]
+    }
+  ],
+  "latex-workshop.latex.autoBuild.run": "never",
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.latex.autoClean.run": "onFailed",
+  "latex-workshop.latex.clean.fileTypes": [
+    "*.aux",
+    "*.bbl",
+    "*.blg",
+    "*.idx",
+    "*.ind",
+    "*.lof",
+    "*.lot",
+    "*.out",
+    "*.toc",
+    "*.acn",
+    "*.acr",
+    "*.alg",
+    "*.glg",
+    "*.glo",
+    "*.gls",
+    "*.ist",
+    "*.fls",
+    "*.fdb_latexmk",
+    "*.synctex.gz",
+    "_minted*",
+    "*.nav",
+    "*.snm",
+    "*.vrb",
+    "*.run.xml",
+    "*.dvi",
+    "*.fls",
+    "*.toc",
+    "*.bcf",
+    "*.run.xml",
+    //"*.log",
+    //"*/*.log"
+  ],
+  "latex-workshop.formatting.latex": "latexindent",
+  "latex-workshop.formatting.latexindent.path": "sh",
+  "latex-workshop.formatting.latexindent.args": [
+    "./bin/linter-tex-fmt.sh",
+  ],
+  // "latex-workshop.formatting.latexindent.path": "latexindent",
+  // "latex-workshop.formatting.latexindent.args": [
+  //     "-c=/workdir/backups",
+  //     "-l",
+  //     "-w",
+  //     "-s",
+  //     "-r",
+  //     "%DOC%"
+  // ],
+  "latex-workshop.formatting.tex-fmt.path": "tex-fmt",
+  "latex-workshop.formatting.tex-fmt.args": [
+    "--keep"
+  ],
+  "editor.wordSeparators": "./\\()\"'-:,.;<>~!@#$%^&*|+=[]{}`~?．。，、（）「」［］｛｝《》てにをはがのともへでや",
+  "editor.formatOnSave": false
+}
