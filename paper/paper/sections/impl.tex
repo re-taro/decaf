@@ -1,0 +1,56 @@
+\chapter{decaf の実装}
+
+decaf は Rust を用いて実装された．
+decaf は \href{https://github.com/re-taro/decaf}{https://github.com/re-taro/decaf}からインストールが可能である．
+Rust のパッケージマネージャである\texttt{cargo}があれば，以下のコマンドでインストールが可能である．
+
+\begin{lstlisting}[caption=decaf のインストール]
+  $ git clone git@github.com:re-taro/decaf.git
+  $ cd decaf
+  $ cargo install --path .
+  $ decaf info
+\end{lstlisting}
+
+\section{型検査}
+
+decaf は任意の TypeScript(\texttt{.tsx?}) ファイルを入力として受け取り，型検査する．
+
+\ref{lst:decaf-check:input}ように実行すると,標準出力として\ref{lst:decaf-check:output}のような結果が得られる．
+
+\begin{lstlisting}[caption=decaf の型検査, label=lst:decaf-check:input]
+  $ decaf check <file>\.tsx?$
+\end{lstlisting}
+
+\begin{lstlisting}[caption=decaf の型検査結果, label=lst:decaf-check:output]
+  error:
+      ┌─ all.tsx:726:3
+      │
+  726 │         obj.prop2;
+      │         ^^^^^^^^^ No property 'prop2' on { prop: 3, prop2: 6 } | { prop: 2 }
+
+  Diagnostics:	446
+  Types:      	5780
+  Lines:      	2239
+  Cache read: 	285.954µs
+  FS read:    	169.096µs
+  Parsed in:  	8.294198ms
+  Checked in: 	4.887375ms
+  Reporting:  	204.832µs
+\end{lstlisting}
+
+\subsection{decaf が型を検査する手順}
+
+decaf が型検査する手順は以下の通りである．
+
+\begin{enumerate}
+    \item 入力ファイルをパースし，AST\footnote{抽象構文木のこと}を生成する．
+          \begin{enumerate}
+              \item ここで変換される AST は ESTree\footnote{ECMAScript の抽象構文木の実質的な標準} や swc\footnote{https://github.com/swc-project/swc}のものとは異なり，decaf 独自の AST である．
+          \end{enumerate}
+    \item 生成された AST を decaf の型検査機が解釈しやすい形に変換する．
+          \begin{enumerate}
+              \item この変換により，型検査に他の言語で実装されているモダンなアルゴリズムを適用できるようになる．
+              \item これを decaf では TypeID と呼んでいる．
+          \end{enumerate}
+    \item TypeID を用いて型検査を行う
+\end{enumerate}
