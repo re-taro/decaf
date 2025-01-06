@@ -82,3 +82,7 @@ draft:
 	git commit -m "WIP" --allow-empty
 	git push -u origin $(branch)
 	hub compare
+
+.PHONY: format
+format:
+	latexindent -l -s -sl -w $(TEX_SRCS)

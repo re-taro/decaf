@@ -1,0 +1,281 @@
+\chapter{型検査の仕様}
+
+それぞれの機能に対する型検査の仕様を示す．例として，decaf と TypeScript における型検査の結果を示す．
+
+\section{変数の宣言}
+
+変数名の後にコロン（:）を付け，その後に型を指定することで変数の型を指定できる．
+変数の型が指定されていない場合，その変数は \texttt{any} 型として扱われる．
+\ref{lst:declaration} のコードを例にすると，decaf では 2 は \texttt{2} 型であり，\texttt{number} 型の部分集合であるため，\texttt{x} は \texttt{number} 型として扱われる．
+しかし，\texttt{y} は \texttt{string} 型であるため，エラーが発生する．
+同様に，\texttt{z} は \texttt{object} 型であるため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:declaration:decaf} に示す．
+
+\begin{lstlisting}[caption=変数宣言の例, label=lst:declaration]
+  const x: number = 2
+  const y: string = 2
+  const z: object = 4
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:declaration:decaf]
+    Type 2 is not assignable to type string
+    Type 4 is not assignable to type object
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:declaration:tsc]
+    Type 'number' is not assignable to type 'string'.
+    Type 'number' is not assignable to type 'object'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{変数への代入}
+
+変数に代入する値の型が変数の型と一致しない場合，エラーが発生する．
+\ref{lst:assignment} のコードを例にすると，decaf では \texttt{x} は \texttt{number} 型であるため，\texttt{"hello world"} は \texttt{number} 型として扱われる．
+しかし，\texttt{number} 型に \texttt{"hello world"} 型を代入できないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:assignment:decaf} に示す．
+
+\begin{lstlisting}[caption=変数への代入の例, label=lst:assignment]
+  let x: number = 3
+  x = "hello world"
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:assignment:decaf]
+    Type "hello world" is not assignable to type number
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:assignment:tsc]
+    Type 'string' is not assignable to type 'number'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{変数への参照}
+
+変数への参照の型が変数の型と一致しない場合，エラーが発生する．
+\ref{lst:reference} のコードを例にすると，decaf では \texttt{a} は \texttt{3} 型であるため，\texttt{b} は \texttt{3} 型として扱われる．
+しかし，\texttt{3} 型に \texttt{string} 型を代入できないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:reference:decaf} に示す．
+
+\begin{lstlisting}[caption=変数への参照の例, label=lst:reference]
+  const a = 3
+  const b: string = a
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:reference:decaf]
+    Type 3 is not assignable to type string
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:reference:tsc]
+    Type 'number' is not assignable to type 'string'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{変数への再代入}
+
+変数への再代入の型が変数の型と一致しない場合，エラーが発生する．
+\ref{lst:reassignment} のコードを例にすると，decaf では \texttt{a} は \texttt{2} 型であるため，\texttt{"hello world"} は \texttt{2} 型として扱われる．
+しかし，\texttt{2} 型に \texttt{"hello world"} 型を最代入できないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:reassignment:decaf} に示す．
+
+\begin{lstlisting}[caption=変数への再代入の例, label=lst:reassignment]
+  let a = 2
+  a = "hello world"
+  a satisfies number
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:reassignment:decaf]
+    Expected number, found "hello world"
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:reassignment:tsc]
+    Type 'string' is not assignable to type 'number'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{存在しない変数への参照}
+
+存在しない変数への参照がある場合，エラーが発生する．
+\ref{lst:nexists} のコードを例にすると，\texttt{nexists} は存在しないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:nexists:decaf} に示す．
+
+\begin{lstlisting}[caption=存在しない変数への参照の例, label=lst:nexists]
+  const exists = 2;
+  nexists;
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:nexists:decaf]
+    Could not find variable 'nexists' in scope
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:nexists:tsc]
+    Cannot find name 'nexists'. Did you mean 'exists'?
+  \end{lstlisting}
+\end{minipage}
+
+\section{変数の宣言前の代入}
+
+変数の宣言前に代入がある場合，エラーが発生する．
+\ref{lst:predeclaration} のコードを例にすると，decaf では \texttt{a} は宣言される前に代入されているため，エラーが発生する．
+
+\begin{lstlisting}[caption=変数の宣言前の代入の例, label=lst:predeclaration]
+  a = 3;
+  let a = 2;
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:predeclaration:decaf]
+    Cannot assign to 'a' before declaration
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:predeclaration:tsc]
+    Block-scoped variable 'a' used before its declaration.
+  \end{lstlisting}
+\end{minipage}
+
+\section{存在しない変数への代入}
+
+存在しない変数への代入がある場合，エラーが発生する．
+\ref{lst:doesNotExist} のコードを例にすると，\texttt{doesNotExist} は存在しないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:doesNotExist:decaf} に示す．
+
+\begin{lstlisting}[caption=存在しない変数への代入の例, label=lst:doesNotExist]
+  doesNotExist = 3;
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:doesNotExist:decaf]
+    Could not find variable 'nexists' in scope
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:doesNotExist:tsc]
+    Cannot find name 'nexists'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{重複して宣言された変数}
+
+変数が重複して宣言された場合，エラーが発生する．
+\ref{lst:duplication} のコードを例にすると，decaf では \texttt{a} は 2 で宣言されているため，\texttt{a} は 2 である．
+しかし，\texttt{a} は 3 で再宣言されているため，エラーが発生する．
+ここで，\texttt{\{ \}} で囲まれた部分はスコープを示しているため，エラーにならない.
+diagnostics は\ref{lst:diagnostics:duplication:decaf} に示す．
+
+\begin{lstlisting}[caption=重複して宣言された変数の例, label=lst:duplication]
+  const a = 2
+  {
+  	const a = 3;
+  	a satisfies 3;
+  }
+  a satisfies 2;
+  const a = 3;
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:duplication:decaf]
+    Cannot redeclare variable 'a'
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:duplication:tsc]
+    Cannot redeclare block-scoped variable 'a'.
+    Cannot redeclare block-scoped variable 'a'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{変数のシャドーイング}
+
+変数のシャドーイングがある場合，エラーが発生する．
+\ref{lst:shadowing} のコードを例にすると，decaf では \texttt{a} は 2 で宣言されているため，\texttt{a} は 2 である．
+\texttt{\{ \}} で囲まれた部分はスコープを示しているため，\texttt{a} は 3 である．
+しかし，\texttt{satisfies}で \texttt{a} が 2 であることを示しているため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:shadowing:decaf} に示す．
+
+\begin{lstlisting}[caption=変数のシャドーイングの例, label=lst:shadowing]
+  const a = 2
+  {
+  	const a = 3;
+  	a satisfies 2;
+  }
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:shadowing:decaf]
+    Expected 2, found 3
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:shadowing:tsc]
+    Type '3' does not satisfy the expected type '2'.
+  \end{lstlisting}
+\end{minipage}
+
+\section{未初期化の変数}
+
+未初期化の変数は \texttt{undefined} 型として扱われる．
+未初期化の変数に型が指定されている場合，エラーが発生する．
+\ref{lst:uninitialized} のコードを例にすると，decaf では \texttt{b} は未初期化のため，\texttt{undefined} 型として扱われる．
+しかし，\texttt{undefined} 型に \texttt{string} 型を期待できないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:uninitialized:decaf} に示す．
+
+\begin{lstlisting}[caption=未初期化の変数の例, label=lst:uninitialized]
+  let b;
+  b satisfies string;
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:uninitialized:decaf]
+    Expected string, found undefined
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:uninitialized:tsc]
+    // エラーにならない
+  \end{lstlisting}
+\end{minipage}
+
+\section{存在しないプロパティへの参照}
+
+存在しないプロパティへの参照がある場合，エラーが発生する．
+\ref{lst:nonexistent} のコードを例にすると，decaf では \texttt{my\_obj} は \texttt{\{ a: 3 \}} 型であるため，\texttt{a} は \texttt{3} 型として扱われる．
+しかし，\texttt{b} は存在しないため，エラーが発生する．
+diagnostics は\ref{lst:diagnostics:nonexistent:decaf} に示す．
+
+\begin{lstlisting}[caption=存在しないプロパティの例, label=lst:nonexistent]
+  let my_obj = { a: 3 }
+  const a = my_obj.a
+  const b = my_obj.b
+\end{lstlisting}
+
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=decaf の diagnostics, label=lst:diagnostics:nonexistent:decaf]
+    No property 'b' on { a: 3 }
+  \end{lstlisting}
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \begin{lstlisting}[caption=tsc の diagnostics, label=lst:diagnostics:nonexistent:tsc]
+    Property 'b' does not exist on type '{ a: number; }'.
+  \end{lstlisting}
+\end{minipage}
