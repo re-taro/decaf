@@ -62,7 +62,7 @@ decaf が型検査する手順は以下の通りである．
           \begin{enumerate}
               \item decafの変換機はプログラムの値や構造を型として，関数やブロックの振る舞いをイベントとしてエンコードする
                     \begin{enumerate}
-                        \item 型やイベントは，AST の走査中に生成され，decaf の型検査機に渡され，使用される.
+                        \item 型やイベントは AST の走査中に生成され，decaf の型検査機に渡され，使用される.
                         \item decafは型を\textbf{その値が取りうる可能性の集合}として捉える．
                         \item 条件分岐やループに差し掛かった時，そのブロック内で取りうる型の集合を広げる．
                               \begin{itemize}
@@ -75,7 +75,8 @@ decaf が型検査する手順は以下の通りである．
                     \end{enumerate}
               \item ASTを走査しながら型の集合を広げていくことで，実行時に起こりうるすべての可能性を型チェック時に考慮できる．
                     \begin{enumerate}
-                        \item
+                        \item 従来のTypeScript Compiler は分岐の評価は，実行されるかされないかのみを考慮している．
+                        \item decaf は分岐を非決定論的に扱い，すべての分岐を評価し\footnote{条件が自明で真である場合などは除く．}型を拡大する．
                     \end{enumerate}
           \end{enumerate}
 \end{enumerate}
