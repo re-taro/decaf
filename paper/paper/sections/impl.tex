@@ -1,19 +1,22 @@
 \chapter{decaf の実装}
 
 decaf は Rust を用いて実装された．
-decaf は \href{https://github.com/re-taro/decaf}{https://github.com/re-taro/decaf}からインストールが可能である．
+TypeScript のパースは\texttt{oxc\_parser}\footnote{\url{https://docs.rs/oxc_parser/latest/oxc_parser/}}を参考に実装した．
+また型の推論と検査は\texttt{tsc}\footnote{\url{https://github.com/microsoft/TypeScript/blob/v5.1.3/src/compiler/checker.ts}}を参考に実装した．
+
+decaf は\url{https://github.com/re-taro/decaf}からインストールが可能である．
 Rust のパッケージマネージャである\texttt{cargo}があれば，以下のコマンドでインストールが可能である．
 
 \begin{lstlisting}[caption=decaf のインストール]
   $ git clone git@github.com:re-taro/decaf.git
   $ cd decaf
   $ cargo install --path .
-  $ decaf info
+  $ decaf --help
 \end{lstlisting}
 
 \section{型検査}
 
-decaf は任意の TypeScript(\texttt{.tsx?}) ファイルを入力として受け取り，型検査する．
+decaf は任意の TypeScript(\texttt{.tsx?})ファイルを入力として受け取り，型検査する．
 
 \ref{lst:decaf-check:input}ように実行すると,標準出力として\ref{lst:decaf-check:output}のような結果が得られる．
 
@@ -27,6 +30,8 @@ decaf は任意の TypeScript(\texttt{.tsx?}) ファイルを入力として受�
       │
   726 │         obj.prop2;
       │         ^^^^^^^^^ No property 'prop2' on { prop: 3, prop2: 6 } | { prop: 2 }
+
+  ---
 
   Diagnostics:	446
   Types:      	5780
@@ -45,12 +50,43 @@ decaf が型検査する手順は以下の通りである．
 \begin{enumerate}
     \item 入力ファイルをパースし，AST\footnote{抽象構文木のこと}を生成する．
           \begin{enumerate}
-              \item ここで変換される AST は ESTree\footnote{ECMAScript の抽象構文木の実質的な標準} や swc\footnote{https://github.com/swc-project/swc}のものとは異なり，decaf 独自の AST である．
+              \item ここで変換されるASTはESTree\footnote{ECMAScript の抽象構文木の実質的な標準}やswc\footnote{https://github.com/swc-project/swc}のものとは異なり，decaf独自のASTである．
           \end{enumerate}
-    \item 生成された AST を decaf の型検査機が解釈しやすい形に変換する．
+    \item 生成されたASTをdecafの型検査機が解釈しやすい形に変換する．
           \begin{enumerate}
               \item この変換により，型検査に他の言語で実装されているモダンなアルゴリズムを適用できるようになる．
-              \item これを decaf では TypeID と呼んでいる．
+              \item これをdecafではTypeIDと呼んでいる．
+              \item この機構をdecafでは変換機と呼んでいる．
           \end{enumerate}
-    \item TypeID を用いて型検査を行う
+    \item 型検査する
+          \begin{enumerate}
+              \item decafの変換機はプログラムの値や構造を型として，関数やブロックの振る舞いをイベントとしてエンコードする
+                    \begin{enumerate}
+                        \item 型やイベントは，AST の走査中に生成され，decaf の型検査機に渡され，使用される.
+                        \item decafは型を\textbf{その値が取りうる可能性の集合}として捉える．
+                        \item 条件分岐やループに差し掛かった時，そのブロック内で取りうる型の集合を広げる．
+                              \begin{itemize}
+                                  \item \ref{lst:example}の例では,\texttt{response}の宣言時，型は\texttt{Response}であり，プロパティ\texttt{data}の型は\texttt{any}\footnote{ここで\texttt{any}型は，便宜上型の全集合とする．}である．
+                                        \begin{itemize}
+                                            \item 条件\texttt{response.data instanceof Date}が真である場合，\texttt{response.data}の型は\texttt{Date}である．
+                                            \item 条件\texttt{response.data instanceof Date}が偽である場合，\texttt{response.data}の型は\texttt{Date}型の補集合を取った型である．
+                                        \end{itemize}
+                              \end{itemize}
+                    \end{enumerate}
+              \item ASTを走査しながら型の集合を広げていくことで，実行時に起こりうるすべての可能性を型チェック時に考慮できる．
+                    \begin{enumerate}
+                        \item
+                    \end{enumerate}
+          \end{enumerate}
 \end{enumerate}
+
+\begin{lstlisting}[caption=例, label=lst:example]
+  async function f(name: string) {
+    const response = await fetch(`/post/${name}`).then(res => res.json());
+    if(response.data instanceof Date) {
+      return response.data;
+    } else {
+      return response.data;
+    }
+  }
+\end{lstlisting}
