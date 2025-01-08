@@ -1,0 +1,16 @@
+{
+  "name": "exp",
+  "type": "module",
+  "scripts": {
+    "exp_1": "NODE_OPTIONS=--expose-gc tsx scripts/exp_1.ts",
+    "exp_2": "bash scripts/exp_2.bash"
+  },
+  "dependencies": {
+    "mitata": "1.0.26",
+    "typescript": "5.7.2",
+    "zx": "8.3.0"
+  },
+  "devDependencies": {
+    "tsx": "4.19.2"
+  }
+}

@@ -35,7 +35,6 @@ pub struct AlwaysPublic;
 // const TYPES_ALWAYS_PUBLIC: &str = r"
 // 	export type AlwaysPublic = false;
 // ";
-
 impl PropertyKeyKind for AlwaysPublic {
     fn parse_identifier(
         first: Token<TSXToken, crate::TokenStart>,
@@ -66,7 +65,6 @@ pub enum PublicOrPrivate {
 // const TYPES_PUBLIC_OR_PRIVATE: &str = r"
 // 	export type PublicOrPrivate = boolean;
 // ";
-
 impl PropertyKeyKind for PublicOrPrivate {
     fn parse_identifier(
         first: Token<TSXToken, crate::TokenStart>,

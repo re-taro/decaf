@@ -48,7 +48,7 @@ pub enum ParseErrors<'a> {
     InvalidLHSOfIs,
 }
 
-impl<'a> Display for ParseErrors<'a> {
+impl Display for ParseErrors<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseErrors::UnexpectedToken { expected, found } => {
@@ -260,7 +260,7 @@ pub(crate) fn parse_lexing_error() -> ParseError {
 
 pub trait ParserErrorReason: Display {}
 
-impl<'a> ParserErrorReason for ParseErrors<'a> {}
+impl ParserErrorReason for ParseErrors<'_> {}
 impl ParserErrorReason for LexingErrors {}
 
 /// A error for not parsing
