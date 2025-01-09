@@ -16,12 +16,12 @@ Rust のパッケージマネージャである\texttt{cargo}があれば，以�
 
 \section{型検査}
 
-decaf は任意の TypeScript(\texttt{.tsx?})ファイルを入力として受け取り，型検査する．
+decaf は任意の TypeScript\footnote{\texttt{.tsx}を含む}ファイルを入力として受け取り，型検査する．
 
 \ref{lst:decaf-check:input}ように実行すると,標準出力として\ref{lst:decaf-check:output}のような結果が得られる．
 
 \begin{lstlisting}[caption=decaf の型検査, label=lst:decaf-check:input]
-  $ decaf check <file>\.tsx?$
+  $ decaf check <file>/.tsx?$/
 \end{lstlisting}
 
 \begin{lstlisting}[caption=decaf の型検査結果, label=lst:decaf-check:output]
@@ -49,14 +49,14 @@ decaf は任意の TypeScript(\texttt{.tsx?})ファイルを入力として受�
 decaf が型検査する手順は以下の通りである．
 
 \begin{enumerate}
-    \item 入力ファイルをパースし，AST\footnote{抽象構文木のこと}を生成する．
+    \item 入力ファイルをパースし，ASTを生成する．
           \begin{enumerate}
               \item ここで変換されるASTはESTree\footnote{ECMAScript の抽象構文木の実質的な標準}やswc\footnote{https://github.com/swc-project/swc}のものとは異なり，decaf独自のASTである．
           \end{enumerate}
     \item 生成されたASTをdecafの型検査機が解釈しやすい形に変換する．
           \begin{enumerate}
               \item この変換により，型検査に他の言語で実装されているモダンなアルゴリズムを適用できるようになる．
-              \item これをdecafではTypeIDと呼んでいる．
+              \item この形をdecafではTypeIDと呼んでいる．
               \item この機構をdecafでは変換機と呼んでいる．
           \end{enumerate}
     \item 型検査する
