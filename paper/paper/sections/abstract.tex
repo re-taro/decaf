@@ -1,3 +1,7 @@
 \begin{abstract}
-    ここに要旨を書く！
+    This study focuses on implementing a TypeScript checker to ensure soundness in the context of gradual typing.
+    It evaluates the existing TypeScript type system against the criteria for gradual typing, highlighting its deficiencies in guaranteeing soundness due to the lack of runtime type checks.
+    A novel tool, decaf, was developed to address these issues by extending the TypeScript type system with static analysis capabilities, enabling the detection of type inconsistencies at compile time.
+    Experimental results demonstrate that while decaf enforces a more rigorous type system compared to the TypeScript Compiler (TSC), it shows trade-offs in performance, particularly for large-scale codebases.
+    Future improvements are suggested to enhance decaf's compatibility and performance, paving the way for safer TypeScript programming without runtime overheads.
 \end{abstract}
