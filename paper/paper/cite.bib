@@ -1,0 +1,61 @@
+@manual{ES5,
+  author = {Patrick Charollais},
+  organization = {ECMA International},
+  title = {ECMA-262, 5th edition, December 2009},
+  year = {2009},
+  month = {12}
+}
+@inproceedings{GradualTyping,
+author = {Siek, Jeremy and Taha, Walid},
+year = {2006},
+month = {01},
+title = {Gradual typing for functional languages},
+journal = {Scheme and Functional Programming}
+}
+@article{MILNER1978348,
+title = {A theory of type polymorphism in programming},
+journal = {Journal of Computer and System Sciences},
+volume = {17},
+number = {3},
+pages = {348-375},
+year = {1978},
+issn = {0022-0000},
+doi = {https://doi.org/10.1016/0022-0000(78)90014-4},
+url = {https://www.sciencedirect.com/science/article/pii/0022000078900144},
+author = {Robin Milner},
+abstract = {The aim of this work is largely a practical one. A widely employed style of programming, particularly in structure-processing languages which impose no discipline of types, entails defining procedures which work well on objects of a wide variety. We present a formal type discipline for such polymorphic procedures in the context of a simple programming language, and a compile time type-checking algorithm W which enforces the discipline. A Semantic Soundness Theorem (based on a formal semantics for the language) states that well-type programs cannot “go wrong” and a Syntactic Soundness Theorem states that if W accepts a program then it is well typed. We also discuss extending these results to richer languages; a type-checking algorithm based on W is in fact already implemented and working, for the metalanguage ML in the Edinburgh LCF system.}
+}
+@InProceedings{siek_et_al:LIPIcs.SNAPL.2015.274,
+  author =	{Siek, Jeremy G. and Vitousek, Michael M. and Cimini, Matteo and Boyland, John Tang},
+  title =	{{Refined Criteria for Gradual Typing}},
+  booktitle =	{1st Summit on Advances in Programming Languages (SNAPL 2015)},
+  pages =	{274--293},
+  series =	{Leibniz International Proceedings in Informatics (LIPIcs)},
+  ISBN =	{978-3-939897-80-4},
+  ISSN =	{1868-8969},
+  year =	{2015},
+  volume =	{32},
+  editor =	{Ball, Thomas and Bodík, Rastislav and Krishnamurthi, Shriram and Lerner, Benjamin S. and Morriset, Greg},
+  publisher =	{Schloss Dagstuhl -- Leibniz-Zentrum f{\"u}r Informatik},
+  address =	{Dagstuhl, Germany},
+  URL =		{https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.SNAPL.2015.274},
+  URN =		{urn:nbn:de:0030-drops-50312},
+  doi =		{10.4230/LIPIcs.SNAPL.2015.274},
+  annote =	{Keywords: gradual typing, type systems, semantics, dynamic languages}
+}
+@inproceedings{rastogi2015safe,
+author = {Rastogi, Aseem and Swamy, Nikhil and Fournet, Cédric and Bierman, Gavin and Vekris, Panagiotis},
+title = {Safe \& Efficient Gradual Typing for TypeScript},
+booktitle = {POPL '15 Proceedings of the 42nd Annual ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages},
+year = {2015},
+month = {January},
+abstract = {Current proposals for adding gradual typing to JavaScript, such as Closure, TypeScript and Dart, forgo soundness to deal with issues of scale, code reuse, and popular programming patterns. We show how to address these issues in practice while retaining soundness. We design and implement a new gradual type system, prototyped for expediency as a 'Safe' compilation mode for TypeScript. Our compiler achieves soundness by enforcing stricter static checks and embedding residual runtime checks in compiled code. It emits plain JavaScript that runs on stock virtual machines. Our main theorem is a simulation that ensures that the checks introduced by Safe TypeScript (1) catch any dynamic type error, and (2) do not alter the semantics of type-safe TypeScript code.
+
+Safe TypeScript is carefully designed to minimize the performance overhead of runtime checks. At its core, we rely on two new ideas: differential subtyping, a new form of coercive subtyping that computes the minimum amount of runtime type information that must be added to each object; and an erasure modality, which we use to safely and selectively erase type information. This allows us to scale our design to full-fledged TypeScript, including arrays, maps, classes, inheritance, overloading, and generic types.
+
+We validate the usability and performance of Safe TypeScript empirically by type-checking and compiling around 120,000 lines of existing TypeScript source code. Although runtime checks can be expensive, the end-to-end overhead is small for code bases that already have type annotations. For instance, we bootstrap the Safe TypeScript compiler (90,000 lines including the base TypeScript compiler): we measure a 15% runtime overhead for type safety, and also uncover programming errors as type safety violations. We conclude that, at least during development and testing, subjecting JavaScript/TypeScript programs to safe gradual typing adds significant value to source type annotations at a modest cost.},
+url = {https://www.microsoft.com/en-us/research/publication/safe-efficient-gradual-typing-typescript/},
+pages = {167-180},
+isbn = {978-1-4503-3300-9},
+edition = {POPL '15 Proceedings of the 42nd Annual ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages},
+}
