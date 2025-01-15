@@ -211,6 +211,7 @@ const v = mul(x, y);
 ランタイムの型チェックを行わないことは TypeScript の根本的な言語デザインであり，その点において gradual typing とは乖離していることが分かった．
 
 \subsection{Safe TypeScriptにおける対応}
+\label{sec:safe_typescript}
 
 前節では，TypeScript が gradual typing の意味において健全性を持たないことで gradual typing の基準を満たしていないことを指摘した．
 この問題に対応するアイデアのひとつが Safe TypeScript\cite{rastogi2015safe}である．
@@ -234,12 +235,19 @@ Safe TypeScript は明確に gradual type system を名乗っている．
 
 しかし，Safe TypeScript ではオーバーヘッドを減らす様々な工夫をしてもなお，15\%のオーバーヘッドが存在する．
 
-\section{decaf が実現する静的解析による健全性}
+\section{新しいTypeScript型検査機「decaf」を作成する目的}
 
-decaf は TypeScript の型システムを拡張し，静的解析することで gradual typing の意味での健全性を保つことを目指している．
+\ref{sec:safe_typescript}で述べた通り，Safe TypeScript は gradual typing の意味での健全性を持つことができる．
+Safe TypeScript は筋こそはいいが，ランタイムのオーバーヘッドが大きいという問題がある．
 
-decaf は型情報を用いたフロー解析をすることで，プログラムの挙動を静的に解析する．
-この解析により，型情報に反する挙動がプログラムに含まれている場合，それを検出できる．
-この検出はランタイムにおける型エラーを検出することに相当する．
+現代の Web 開発において，TypeScript は JavaScript へトランスパイルされ，ブラウザで実行される．
+ランタイムのオーバーヘッドはユーザビリティに大きな影響を与える．
+そのため，Safe TypeScript は実用的な選択肢とは言い難い．
 
-また，decaf では型エラーを静的解析時に検出することで，実行時の挙動をオーバーヘッド無しで保証できる．
+開発者の求める TypeScript の使用方法と，gradual typing は相反していると筆者は考える．
+開発者は TypeScript を使うことで，JavaScript のような柔軟性を持ちつつ，静的型検査による安全性を得たいと考えている．
+
+ここで，JavaScript の柔軟性を「型アノテーションが不要である」という意味で捉えると，従来の TypeScript では \texttt{any}型となる部分が柔軟性を持つ部分であると言える．
+しかし，開発者が TypeScript に求める本当の柔軟性は省略された型アノテーションを補完した上での静的型検査による安全性である．
+
+そこで，TypeScript の型システムを拡張し，型解析を通して健全性を保つことを目指す新しい TypeScript 型検査機「decaf」を提案する．
