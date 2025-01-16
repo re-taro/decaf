@@ -75,15 +75,15 @@ decaf は tsc よりも厳格な型システムを提供するため，型検査
 
 各テストケースにおける decaf と tsc の平均の型検査時間を比較した結果を表\ref{tab:comparison} に示す．
 数値の単位はミリ秒である．
-列見出しはそれぞれのテストケースの行数を示している．
+列見出しはそれぞれのテストケースの繰り返し回数を示している．
 
 \begin{table}[h]
 	\caption{decaf と tsc の平均の型検査時間比較}
 	\begin{tabular}{|c|c|c|c|c|}
 		\hline
-		               & \textbf{2949} & \textbf{29490} & \textbf{58980} & \textbf{117960} \\ \hline
-		\textbf{decaf} & 19.47         & 162.54         & 484.79         & 1610            \\ \hline
-		\textbf{tsc}   & 272.78        & 323.83         & 371.18         & 451.96          \\ \hline
+		\textbf{n}     & 1      & 10     & 20     & 40     \\ \hline
+		\textbf{decaf} & 19.47  & 162.54 & 484.79 & 1610   \\ \hline
+		\textbf{tsc}   & 272.78 & 323.83 & 371.18 & 451.96 \\ \hline
 	\end{tabular}
 	\label{tab:comparison}
 \end{table}
