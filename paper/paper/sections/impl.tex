@@ -18,7 +18,7 @@ Rust のパッケージマネージャである\texttt{cargo}があれば，以�
 
 decaf は任意の TypeScript\footnote{\texttt{.tsx}を含む}ファイルを入力として受け取り，型検査する．
 
-\ref{lst:decaf-check:input}ように実行すると,標準出力として\ref{lst:decaf-check:output}のような結果が得られる．
+Listing \ref{lst:decaf-check:input}ように実行すると,標準出力として Listing \ref{lst:decaf-check:output}のような結果が得られる．
 
 \begin{lstlisting}[caption=decaf の型検査, label=lst:decaf-check:input]
   $ decaf check <file>/.tsx?$/
@@ -67,7 +67,7 @@ decaf が型検査する手順は以下の通りである．
                         \item decafは型を\textbf{その値が取りうる可能性の集合}として捉える．
                         \item 条件分岐やループに差し掛かった時，そのブロック内で取りうる型の集合を広げる．
                               \begin{itemize}
-                                  \item \ref{lst:example}の例では,\texttt{response}の宣言時，型は\texttt{Response}であり，プロパティ\texttt{data}の型は\texttt{any}\footnote{ここで\texttt{any}型は，便宜上型の全集合とする．}である．
+                                  \item Listing \ref{lst:example}の例では,\texttt{response}の宣言時，型は\texttt{Response}であり，プロパティ\texttt{data}の型は\texttt{any}\footnote{ここで\texttt{any}型は，便宜上型の全集合とする．}である．
                                         \begin{itemize}
                                             \item 条件\texttt{response.data instanceof Date}が真である場合，\texttt{response.data}の型は\texttt{Date}である．
                                             \item 条件\texttt{response.data instanceof Date}が偽である場合，\texttt{response.data}の型は\texttt{Date}型の補集合を取った型である．

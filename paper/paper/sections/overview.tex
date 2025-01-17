@@ -73,7 +73,7 @@ const succ = (x: number) => x + 1;
 ((x: any) => succ(x))(true)
 \end{lstlisting}
 
-\ref{lst:example_ts}の式は，実行すると\texttt{true}という\texttt{boolean}型の値が\texttt{succ}関数に渡される．
+Listing \ref{lst:example_ts}の式は，実行すると\texttt{true}という\texttt{boolean}型の値が\texttt{succ}関数に渡される．
 \texttt{succ}は\texttt{number}型の引数を渡すべきなので，これは誤ったプログラムということになる．
 
 ただし，上の式は型システムによる静的検査をくぐり抜ける．
