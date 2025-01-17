@@ -1,0 +1,457 @@
+# MIT License
+
+# Copyright (c) 2022 Shena
+# Copyright (c) 2024 being24
+
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
+fileExtensionPreference:
+  .tex: 1
+  .sty: 2
+  .cls: 3
+  .bib: 4
+
+# default file extension of backup file (if -w switch is active)
+# for example, if your .tex file is called
+#       myfile.tex
+# and you specify the backupExtension as BACKUP.bak then your
+# backup file will be
+#       myfileBACKUP.bak
+backupExtension: .bak
+
+# only one backup per file:
+#   - if onlyOneBackUp is 0 then, as a safety measure,
+#     the number on the extension increments by 1 each time:
+#
+#           myfile.bak0, myfile.bak1, myfile.bak2
+#   - if you set onlyOnebackUp to 1, then the backup file will
+#     be overwritten each time (not recommended until you trust the script)
+onlyOneBackUp: 0
+
+# some users may want a finite number of backup files,
+# say at most 3; in which case, they can change this maxNumberOfBackUps.
+#
+# If maxNumberOfBackUps is set to 0 (or less) then infinitely
+# many backups are possible, unless onlyOneBackUp is switched on
+maxNumberOfBackUps: 1
+
+# some users may wish to cycle through back up files.
+#
+# for example, with maxNumberOfBackUps: 4, they may
+# wish to delete the oldest back up file, and keep only the most recent.
+#
+#    copy myfile.bak1 to myfile.bak0
+#    copy myfile.bak2 to myfile.bak1
+#    copy myfile.bak3 to myfile.bak2
+#    copy myfile.bak4 to myfile.bak3
+#
+# the back up will be written to myfile.bak4
+cycleThroughBackUps: 1
+
+# preferences for information displayed in the log file
+logFilePreferences:
+  showEveryYamlRead: 0
+  showAmalgamatedSettings: 0
+  showDecorationStartCodeBlockTrace: 0
+  showDecorationFinishCodeBlockTrace: 0
+  endLogFileWith: "--------------"
+  showGitHubInfoFooter: 1
+
+#  verbatim environments specified
+#  in this field will not be changed at all!
+verbatimEnvironments:
+  verbatim: 1
+  lstlisting: 1
+  minted: 1
+
+#  verbatim commands such as \verb! body !, \lstinline$something else$
+verbatimCommands:
+  verb: 1
+  lstinline: 1
+
+#  no indent blocks (not necessarily verbatim
+#  environments) which are marked as %\begin{noindent}
+#  or anything else that you detail in the following
+noIndentBlock:
+  noindent: 1
+  cmhtest: 1
+
+# remove trailing whitespace from all lines
+removeTrailingWhitespace:
+  beforeProcessing: 0
+  afterProcessing: 1
+
+# \begin{document} and \end{document} are treated differently
+# by latexindent within filecontents environments
+fileContentsEnvironments:
+  filecontents: 1
+  filecontents*: 1
+
+# indent preamble
+indentPreamble: 0
+
+# assume no preamble in cls, sty, by default
+lookForPreamble:
+  .tex: 1
+  .sty: 0
+  .cls: 0
+  .bib: 0
+
+# some preambles can contain \begin and \end statements
+# that are not in their 'standard environment block', for example,
+# consider the following key = values:
+#    preheadhook={\begin{mdframed}[style=myframedstyle]},
+#    postfoothook=\end{mdframed},
+preambleCommandsBeforeEnvironments: 0
+
+# default value of indentation
+defaultIndent: "    "
+
+# specialBeginEnd is, by default, mathmode focus, although
+# there's no restrictions
+indentRules:
+    leftRightAutoSizeBrackets: '  '
+specialBeginEnd:
+    leftRightAutoSizeBrackets:
+        begin: '\\left(?:\(|\[|\\\{|\.|\\l)'
+        end: '\\right(?:\)|\]|\\\}|\.|\\r)'
+        lookForThis: 1
+
+# name of code blocks that should have their body aligned at ampersand delimiters
+lookForAlignDelims:
+    aligned:
+      delims: 1
+      alignDoubleBackSlash: 0
+      spacesBeforeDoubleBackSlash: 1
+      multiColumnGrouping: 1
+      alignRowsWithoutMaxDelims: 1
+      spacesBeforeAmpersand: 1
+      spacesAfterAmpersand: 1
+      justification: left
+      alignFinalDoubleBackSlash: 0
+      dontMeasure: 0
+      delimiterRegEx: (?<!\\)(&[\+\-\*=<>]?) # e.g., &=, &<
+      delimiterJustification: left
+      lookForChildCodeBlocks: 1
+      alignContentAfterDoubleBackSlash: 0
+      spacesAfterDoubleBackSlash: 0
+    # equation(*) and gather fields are placed here lookForAlignDelims just for DBSFinishesWithLineBreak to find and act on them. The content of setting itself is not important.
+    equation:
+      delims: 1
+      alignDoubleBackSlash: 0
+      spacesBeforeDoubleBackSlash: 1
+      multiColumnGrouping: 0
+      alignRowsWithoutMaxDelims: 1
+      spacesBeforeAmpersand: 0
+      spacesAfterAmpersand: 0
+      justification: left
+      alignFinalDoubleBackSlash: 0
+      dontMeasure: 0
+      delimiterRegEx: 0^ # no delimiters
+      delimiterJustification: left
+      lookForChildCodeBlocks: 1
+      alignContentAfterDoubleBackSlash: 0
+      spacesAfterDoubleBackSlash: 0
+    equation*:
+      delims: 1
+      alignDoubleBackSlash: 0
+      spacesBeforeDoubleBackSlash: 1
+      multiColumnGrouping: 0
+      alignRowsWithoutMaxDelims: 1
+      spacesBeforeAmpersand: 0
+      spacesAfterAmpersand: 0
+      justification: left
+      alignFinalDoubleBackSlash: 0
+      dontMeasure: 0
+      delimiterRegEx: 0^ # no delimiters
+      delimiterJustification: left
+      lookForChildCodeBlocks: 1
+      alignContentAfterDoubleBackSlash: 0
+      spacesAfterDoubleBackSlash: 0
+    gather:
+      delims: 1
+      alignDoubleBackSlash: 0
+      spacesBeforeDoubleBackSlash: 1
+      multiColumnGrouping: 0
+      alignRowsWithoutMaxDelims: 1
+      spacesBeforeAmpersand: 0
+      spacesAfterAmpersand: 0
+      justification: left
+      alignFinalDoubleBackSlash: 0
+      dontMeasure: 0
+      delimiterRegEx: 0^ # no delimiters
+      delimiterJustification: left
+      lookForChildCodeBlocks: 1
+      alignContentAfterDoubleBackSlash: 0
+      spacesAfterDoubleBackSlash: 0
+    gather*:
+      delims: 1
+      alignDoubleBackSlash: 0
+      spacesBeforeDoubleBackSlash: 1
+      multiColumnGrouping: 0
+      alignRowsWithoutMaxDelims: 1
+      spacesBeforeAmpersand: 0
+      spacesAfterAmpersand: 0
+      justification: left
+      alignFinalDoubleBackSlash: 0
+      dontMeasure: 0
+      delimiterRegEx: 0^ # no delimiters
+      delimiterJustification: left
+      lookForChildCodeBlocks: 1
+      alignContentAfterDoubleBackSlash: 0
+      spacesAfterDoubleBackSlash: 0
+
+modifyLineBreaks:
+    preserveBlankLines: 0                   # 0/1
+    condenseMultipleBlankLinesInto: 1       # 0/1
+    oneSentencePerLine:
+        manipulateSentences: 1              # 0/1
+        removeSentenceLineBreaks: 1         # 0/1
+        multipleSpacesToSingle: 1           # 0/1
+        sentencesBeginWith:
+            A-Z: 1                          # 0/1
+            a-z: 1                          # 0/1
+            other: [0-9"']                # regex
+        sentencesEndWith:
+          other: 0^                        # regex
+    environments:
+        BeginStartsOnOwnLine: 1             # -1,0,1,2,3,4
+        BodyStartsOnOwnLine: 1              # -1,0,1,2,3,4
+        EndStartsOnOwnLine: 1               # -1,0,1,2,3,4
+        EndFinishesWithLineBreak: 1
+        DBSFinishesWithLineBreak: 1
+        # setting for individual environments to overwrite the default
+        document:
+            BodyStartsOnOwnLine: 4          # -1,0,1,2,3,4
+            EndStartsOnOwnLine: 4           # -1,0,1,2,3,4
+        # "outer" math envs, such as equation and gather, are set to have a preceding blank line, so that they are more easily distinguished by a neighboring sentence
+        # while "inner" math envs, such as aligned and cases, are set to have no additional blank line around them (use default)(see the example below).
+        #
+        # Example
+        #
+        # some sentence.
+        # [a blank line here is useful to distinguish a preceding sentence and math env. So we set BeginStartsOnOwnLine: 4]
+        # \begin{equation*}
+        #   %[need a blank line here? I don't think so.]
+        #   \begin{aligned}
+        #     \rank J_{p} &= \rank \restrict{F}{E_{p}} \\
+        #                 &= \dim \mathbb{R}^{k} \\
+        #   \end{aligned}
+        #   %[need a blank line here? I don't think so.]
+        # \end{equation*}
+        # % [a blank line here means the following line is a new paragraph, which is not always the case. So we would like to place comment mark % instead to create space, but the functionality is not provided by latexindent.]
+        # some sentences
+        #
+        equation:
+            BeginStartsOnOwnLine: 4         # -1,0,1,2,3,4
+            BodyStartsOnOwnLine: 1          # -1,0,1,2,3,4
+            EndStartsOnOwnLine: 1           # -1,0,1,2,3,4
+            EndFinishesWithLineBreak: 1     # -1,0,1,2,3,4
+        equation*:
+            BeginStartsOnOwnLine: 4         # -1,0,1,2,3,4
+            BodyStartsOnOwnLine: 1          # -1,0,1,2,3,4
+            EndStartsOnOwnLine: 1           # -1,0,1,2,3,4
+            EndFinishesWithLineBreak: 1     # -1,0,1,2,3,4
+        gather:
+            BeginStartsOnOwnLine: 4         # -1,0,1,2,3,4
+            BodyStartsOnOwnLine: 1          # -1,0,1,2,3,4
+            EndStartsOnOwnLine: 1           # -1,0,1,2,3,4
+            EndFinishesWithLineBreak: 1     # -1,0,1,2,3,4
+        gather*:
+            BeginStartsOnOwnLine: 4         # -1,0,1,2,3,4
+            BodyStartsOnOwnLine: 1          # -1,0,1,2,3,4
+            EndStartsOnOwnLine: 1           # -1,0,1,2,3,4
+            EndFinishesWithLineBreak: 1     # -1,0,1,2,3,4
+
+
+# replacements gets active only when latexindent is called with -r switch
+replacements:
+    -   amalgamate: 1
+    -   this: 'latexindent.pl'
+        that: 'pl.latexindent'
+        lookForThis: 1
+        when: before
+    -   this: "　"
+        that: " "
+        lookForThis: 1
+        # Be sure to set it last
+        # Combine 2 or more "half-width spaces" into 1
+    -   this: "。"
+        that: "．"
+        lookForThis: 1
+    -   this: "、"
+        that: "，"
+        lookForThis: 1
+        #
+        #--------------------------------------------------#
+        #                   DOC ENV                        #
+        #--------------------------------------------------#
+        #
+    -   substitution: |-
+          s/(?<=\\begin\{document\})(.*?)(?=\\end\{document\})/
+            my $body = $1;
+        # Condense consecutive white spaces into one
+            $body =~ s@\h{2,}@ @g;
+        # Remove leading and trailing white spaces in braces "{}"
+            $body =~ s@\{\h*(.*?)\h*\}@\{$1\}@g;
+        # Insert half-width space at every end of brace if it is followed by a command or a character
+            $body =~ s@(?<=\)|\}|])(\\?[0-9a-zA-Z])@ $1@g;
+        # Remove space before comma and punctuation
+            $body =~ s@\h*([,\.])@$1@g;
+        # add space before "\" (avoiding \left\rvert)
+            $body =~ s@(?<=\w)\\(?![rl][Vv]ert)@ \\@g;
+        # place %\n at the next line math env ends, in order to create visual space between math env and text env
+            $body =~ s@(?<=\\end\{equation\*\}|\\end\{gather\}|\\end\{gather\*\})(.*)\n(?!%)@$1\n%\n@g;
+            $body;/sxge;
+        lookForThis: 1
+        when: before
+        #
+        #--------------------------------------------------#
+        #                   TEX ENV                        #
+        #--------------------------------------------------#
+        #
+    -   substitution: |- # text env = document env minus math env
+          s/(?<=\\begin\{document\}|\\\)|\\end\{equation\}|\\end\{equation\*\}|\\end\{gather\}|\\end\{gather\*\})(.*?)(?=\\end\{document\}|\\\(|\\begin\{equation\}|\\begin\{equation\*\}|\\begin\{gather\}|\\begin\{gather\*\})/
+            my $body = $1;
+        # condense consecutive blank lines into one
+        # this is a symptomatic treatment.
+            $body =~ s@(?:\h*\n\h*){2,}\n@\n\n@gs;
+            $body;/sxge;
+        lookForThis: 0
+        when: before
+        #
+        #--------------------------------------------------#
+        #                   MATH ENV                       #
+        #--------------------------------------------------#
+        #
+        # Replacements for \begin{env}-\end{env} style math environment.
+        #
+        # Suppose we would like to apply some regular expressions to a formula inside a nested math environment
+        # like \begin{equation*}\begin{aligned}f(x)&=g(x)+h(x)\\&=0\end{aligned}\end{equation*}.
+        # (Consider non-nested environment as a trivial nested environment.)
+        # the following code classifies formula ($body), \begin{env} ($begin) and \end{env} ($end) statements from the nested environments in a recursive way.
+        # (Technical Note) It seems that there are some perl syntax latexindent(v3.22.2) does not support, such as "if ($body =~ /regexp/)".
+        # The following code is written in a way that avoids such syntax.
+    -
+        # function to align a formula inside a nested math environment.
+        # The first line in substitution must be a regular expression? (otherwise it will not work in my experience).
+        substitution: |-
+          s/(\\begin\{(?:equation|gather)\*?\}[\h\n]*)(?<!\n)(.*?)(?!\h)([\h\n]*\\end\{(?:equation|gather)\*?\}[\h\n]*)/
+            my ($begin, $body, $end) = ($1, $2, $3);
+        # name of environment that could come into equation or gather.
+            my @envs = ("aligned","cases");
+        # choose only envs that are present in the body
+	          @envs = grep { contain_env($_, $body) } @envs;
+        # function to cut \begin\end in body and paste in \begin and \end
+            sub process_gather {
+              my ($b, $c, $e, $be, $en) = @_;
+              $$be .= $b;
+              $$en = $e.$$en;
+              return $c;
+            }
+        # test if body contains \begin{env*?} statement
+            sub contain_env {
+              my ($env, $body) = @_;
+              return index($body, "\\begin\{".$env) != -1;
+            }
+        # recursively cut out \begin and \end from body and add them to $begin and $end
+            while (1){
+              foreach my $env (@envs){
+                if (contain_env($env, $body)){
+                  $body =~ s@([\h\n]*?\\begin\{$env\*?\}[\h\n]*)(?<!\n)(.*?)(?!\h)([\h\n]*\\end\{$env\*?\}[\h\n]*)@process_gather($1, $2, $3, \$begin, \$end)@egxs;
+                  next;
+                }
+              }
+              last;
+            }
+        # add space around operators +-=/*\\ if they are not paired with &
+            $body =~ s@\h*(?<![&\{:])([\+\-=\/\*])(?![\:}&])\h*@ $1 @sg;
+        # Add braces to superscripts and subscripts
+            $body =~ s@(\^|\_)([a-zA-Z0-9]+)@$1\{$2\}@sg;
+        # add space around <>
+            $body =~ s@(?<!\\left|\\right)\h*(<|>)\h*(?!\\left|\\right)@ $1 @sg;
+        # remove blank line (this is done by modifyLineBreaks)
+            # $body =~ s@(?:\h*\n\h*){2,}@\n@g;
+            $begin . $body . $end /sxge;
+        lookForThis: 1
+        when: before
+        #
+        #--------------------------------------------------#
+        #                 INLINE MATH                      #
+        #--------------------------------------------------#
+        #
+        # Replacements for inline math block \( x \).
+    -
+        substitution: |-
+          s/(?<=\\\()\h*(.*?)\h*(?=\\\))/
+        # ↑ this expression is solely for \( x \) style inline math.
+            my $body = $1;
+        # Insert space at the beginning&end of inline math env
+        # \(x\) -> \( x \)
+            $body = " ". $body . " ";
+        # Add braces to superscripts and subscripts
+            $body =~ s@(\^|\_)([a-zA-Z0-9]+)@$1\{$2\}@sg;
+        # add a single space around + - = * /
+            $body =~ s@\h*(?<![\{:])([\+\-=\/\*])(?![\}:])\h*@ $1 @sg;
+        # add space around <>
+            $body =~ s@(?<!\\left|\\right)\h*(<|>)\h*(?!\\left|\\right)@ $1 @sg;
+            $body;/sxge
+        lookForThis: 1
+        when: after
+
+fineTuning:
+    # fineTuning for trailing comments seems to cause trouble. so I disable it.
+    trailingComments:
+      notPreceededBy: # (?<!\\)
+      afterComment: 0^ # .*?
+    modifyLineBreaks:
+      comma: ','
+    # exclude .\command
+      betterFullStop: |-
+        (?x)                                # ignore spaces in the below
+        (?:                                 #
+          \.\)                              # .)
+          (?!\h*[a-z\\])                    # not *followed by* a-z and \
+        )                                   #
+        |                                   # OR
+        (?:                                 #
+          (?<!                              # not *preceded by*
+            (?:                             #
+              (?:[eE]\.[gG])                # e.g OR E.g OR e.G OR E.G
+              |                             #
+              (?:[iI]\.[eE])                # i.e OR I.e OR i.E OR I.E
+              |                             #
+              (?:etc)                       # etc
+              |                             #
+              (?:[wW]\.[rR]\.[tT])          # w.r.t OR W.r.t OR w.R.t OR w.r.T OR W.R.t OR W.r.T OR w.R.T OR W.R.T
+            )                               #
+          )                                 #
+        )                                   #
+        \.                                  # .
+        (?!                                 # not *followed by*
+          (?:                               #
+            [a-zA-Z0-9-~,\\]                #
+            |                               #
+            \),                             # ),
+            |                               #
+            \)\.                            # ).
+          )                                 #
+        )                                   #

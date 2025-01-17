@@ -1,0 +1,203 @@
+% クラスファイルを指定
+% jlreqはW3Cで勧告されている日本語組版処理の要件を満たすクラスファイル
+% jarticle, jreport, jbookなどは古い上に日本語組版処理の要件を満たしていないため使わない
+\documentclass[
+  % LuaLaTeXを使う
+  luatex,
+  % 用紙サイズをA4にする
+  paper=a4paper,
+  % 欧文のフォントサイズを11ptにする
+  fontsize=11pt,
+  % レポート形式
+  report,
+  % 日本語組版処理の記述と矛盾する設定がある場合に通知
+  jlreq_notes,
+]{jlreq}
+
+% jlreqsetupで色々設定できるようにする
+\usepackage{jlreq-complements}
+
+% jlreqの設定
+\jlreqsetup{
+  % 参考文献の見出しの出力命令を設定
+  thebibliography_heading={
+    % 見出しを章にする
+    \chapter*{\refname}
+    % 目次に追加
+    \addcontentsline{toc}{chapter}{\refname}
+  },
+}
+
+% 画像を扱う
+\usepackage{graphicx}
+\usepackage{here}
+\graphicspath{figures/}
+
+% pdfのハイパーリンクを設定
+\usepackage[hidelinks]{hyperref}
+
+% 相対パスでファイルを読み込む
+\usepackage{import}
+
+% 章やページの合計を扱う
+\usepackage{totcount}
+
+% 数式関連
+\usepackage{amsmath,amssymb}
+\usepackage{mathtools}
+% 参照した数式番号のみを表示する
+% \mathtoolsset{showonlyrefs=true}
+
+% 数式のフォントを変更
+% amsmathより後に読み込む必要がある
+\usepackage[
+  % mathtoolsと一部競合するため，警告を無視
+  warnings-off={mathtools-colon,mathtools-overbracket}
+]{unicode-math}
+\unimathsetup{math-style=TeX,bold-style=TeX}
+\setmainfont[Ligatures=TeX]{Latin Modern Roman}
+\setsansfont[Ligatures=TeX]{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}
+\setmathfont{Latin Modern Math}
+\setmathfont{XITS Math}[range={scr,bfscr}]% Latin Modern Mathにscr体がないので
+
+% フォントを設定
+% unicode-mathの後でないとフォントが変更されない
+\usepackage[
+  % ヒラギノ明朝(プロポーショナル)を使用
+  hiragino-pron,
+  % 多ウェイト化を有効にする
+  deluxe,
+  % jlreqで使えるようにする
+  jfm_yoko=jlreq,
+  jfm_tate=jlreqv,
+]{luatexja-preset}
+
+
+% 単位付き数値の入力を楽にする
+\usepackage{siunitx}
+
+% 数式の記述を楽にする
+\usepackage{physics2}
+% 括弧のサイズを自動調整する
+\usephysicsmodule{ab}
+% 行列の記述を楽にする
+\usephysicsmodule{diagmat}
+\usephysicsmodule{xmat}
+
+% 微分記号の入力を楽にする
+\usepackage{derivative}
+
+% svgを扱う
+\usepackage{svg}
+
+% 表の罫線を扱う
+\usepackage{booktabs}
+
+% キャプションを設定
+\usepackage[hang,small,bf]{caption}
+\usepackage[subrefformat=parens]{subcaption}
+\captionsetup[subfigure]{labelformat=simple}
+\renewcommand{\thesubfigure}{(\alph{subfigure})}
+
+% ソースコードを扱う
+\usepackage{listings}
+\lstset{
+  % タブの展開後のサイズ
+  tabsize={4},
+  % 行番号表示，デフォルト: none 他のオプション: left, right
+  numbers=left,
+  % 書体の指定，行番号の書体指定
+  basicstyle={\small},
+  % 識別子の書体指定
+  identifierstyle={\small},
+  % 行番号の書体指定
+  %numberstyle=\scriptsize,
+  % 注釈の書体。
+  commentstyle={\small\ttfamily},
+  ndkeywordstyle={\small},
+  % キーワードの書体指定。
+  keywordstyle={\small\bfseries},
+  stringstyle={\small\ttfamily},
+  columns=[l]{fullflexible},
+  xrightmargin=0\zw,
+  xleftmargin=0\zw,
+  numbersep=1\zw,
+  %backgroundcolor={\color[gray]{.85}},
+  % frameの指定．デフォルト: none 他のオプション: leftline, topline, bottomline, lines, single, shadowbox
+  frame=lines,
+  % 行が長くなってしまった場合の改行．デフォルト: false
+  breaklines=true,
+}
+
+% 図や表や式の参照用マクロ
+\newcommand{\figref}[1]{\figurename~\ref{#1}}
+\newcommand{\tabref}[1]{\tablename~\ref{#1}}
+\newcommand{\eqnref}[1]{式~\eqref{#1}}
+
+% 便利マクロ
+\newcommand{\ccolumn}[1]{\multicolumn{1}{c}{#1}} % 中央揃えの表のセル
+
+\regtotcounter{chapter}
+
+\begin{document}
+
+% 表紙
+\begin{titlepage}
+    \noindent
+    \centering
+
+    \vfill
+
+    \LARGE{令和6年度 卒業論文}
+
+    \vspace{10mm}
+
+    \Huge{静的型付けの意味における健全性に焦点を当てた TypeScript 型検査機}
+
+    \vspace{2mm}
+
+    \LARGE{A TypeScript type checker with focus on soundness in the context of static typing}
+
+    \vfill
+
+    \Large{鈴鹿工業高等専門学校}
+
+    \Large{電子情報工学科}
+
+    \Large{青山研究室}
+
+    \vspace{5mm}
+
+    \LARGE{糸川　倫太朗}
+
+    \vfill
+
+    \Large{指導教員: 青山　俊弘}
+
+    \vspace{2mm}
+
+    \Large{令和７年１月１７日}
+\end{titlepage}
+
+% 最初のページはページ番号をローマ数字にする
+\pagenumbering{roman}
+
+% abstract
+\subinputfrom{sections/}{abstract.tex}
+
+% 目次を表示
+\tableofcontents
+
+\clearpage
+% ページ番号を元に戻す
+\pagenumbering{arabic}
+
+% 本文
+\subinputfrom{sections/}{index.tex}
+
+% 参考文献
+\bibliography{cite}
+\bibliographystyle{junsrt}
+
+\end{document}

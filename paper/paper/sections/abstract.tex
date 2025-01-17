@@ -1,0 +1,9 @@
+\begin{abstract}
+    In the context of large-scale software development, maintaining code quality and development speed is crucial.
+    TypeScript, a superset of JavaScript, incorporates static typing to address these challenges, utilizing a gradual typing system.
+    However, its type system has limitations in terms of soundness.
+    This study aims to evaluate TypeScript's compliance with gradual typing criteria and develop a new type checker, "decaf," which ensures soundness in static typing.
+    Implemented in Rust, decaf employs a stricter type system than the standard TypeScript compiler (tsc).
+    Experiments reveal that decaf provides enhanced static analysis, detecting potential runtime errors at compile time.
+    While decaf demonstrates slower performance on larger programs due to its comprehensive checks, it achieves faster results on standard-sized cases, indicating its practicality for improving TypeScript's reliability without compromising usability.
+\end{abstract}
