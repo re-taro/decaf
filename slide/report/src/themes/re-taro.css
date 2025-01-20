@@ -1,0 +1,19 @@
+/* @theme re-taro */
+
+@import "gaia";
+@import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=JetBrains+Mono:wght@100..800&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap");
+
+section.title {
+	display: grid;
+	place-content: center;
+}
+
+section {
+	font-family: Inter, "Zen Kaku Gothic New", sans-serif;
+	--fontStack-monospace: "JetBrains Mono", monospace;
+	font-weight: 500;
+}
+
+code {
+	font-family: "JetBrains Mono", monospace;
+}
